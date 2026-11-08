@@ -87,6 +87,9 @@ fun WorkoutEntity.toModel(): Workout = Workout(
     createdAt = createdAt
 )
 
+/** Безопасное преобразование для чтения из базы: одна повреждённая запись не роняет дневник. */
+fun WorkoutEntity.toModelOrNull(): Workout? = runCatching { toModel() }.getOrNull()
+
 fun Workout.toEntity(): WorkoutEntity = WorkoutEntity(
     id = id,
     dateEpochDay = date.toEpochDay(),

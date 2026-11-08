@@ -13,9 +13,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -26,6 +31,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import kotlinx.coroutines.flow.collect
 import ru.petproject.giribro.AppViewModel
 import ru.petproject.giribro.timer.TimerPhase
 import ru.petproject.giribro.timer.TimerService
@@ -55,12 +61,25 @@ fun AppRoot(vm: AppViewModel) {
     val route = backStackEntry?.destination?.route ?: "diary"
     val baseRoute = route.substringBefore('?')
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val saving by vm.saving.collectAsStateWithLifecycle()
     val timerState by TimerService.state.collectAsStateWithLifecycle()
     val timerFullScreen = baseRoute == "timer" &&
         (timerState.isActive || timerState.phase == TimerPhase.DONE)
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(vm) {
+        vm.messages.collect { message ->
+            snackbarHostState.showSnackbar(
+                message = message.text,
+                withDismissAction = true,
+                duration = if (message.isError) SnackbarDuration.Long else SnackbarDuration.Short
+            )
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (baseRoute != "new" && !timerFullScreen) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
@@ -141,9 +160,15 @@ fun AppRoot(vm: AppViewModel) {
                         defaultWeight = settings.defaultWeight,
                         initialWorkout = source,
                         repeat = isRepeat,
+                        saving = saving,
                         onSave = { workout ->
-                            vm.saveWorkout(workout)
-                            navController.popBackStack()
+                            vm.saveWorkout(workout) {
+                                if (navController.currentDestination?.route
+                                        ?.startsWith("new") == true
+                                ) {
+                                    navController.popBackStack()
+                                }
+                            }
                         },
                         onClose = { navController.popBackStack() }
                     )

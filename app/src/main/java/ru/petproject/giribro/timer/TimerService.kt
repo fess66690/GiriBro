@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -54,19 +55,24 @@ class TimerService : Service() {
                     return START_NOT_STICKY
                 }
                 val first = plan.steps.first()
-                startForeground(
-                    TimerNotifications.NOTIFICATION_ID,
-                    buildNotification(
-                        TimerState(
-                            phase = first.phase,
-                            remainingSec = first.seconds,
-                            stepIndex = 0,
-                            running = true,
-                            plan = plan
+                try {
+                    startForeground(
+                        TimerNotifications.NOTIFICATION_ID,
+                        buildNotification(
+                            TimerState(
+                                phase = first.phase,
+                                remainingSec = first.seconds,
+                                stepIndex = 0,
+                                running = true,
+                                plan = plan
+                            )
                         )
                     )
-                )
-                begin(plan)
+                    begin(plan)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Не удалось запустить таймер", e)
+                    stopTimer()
+                }
             }
 
             ACTION_PAUSE -> pause()
@@ -214,7 +220,11 @@ class TimerService : Service() {
 
     private fun updateNotification() {
         val manager = getSystemService(NotificationManager::class.java) ?: return
-        manager.notify(TimerNotifications.NOTIFICATION_ID, buildNotification(_state.value))
+        runCatching {
+            manager.notify(TimerNotifications.NOTIFICATION_ID, buildNotification(_state.value))
+        }.onFailure {
+            Log.w(TAG, "Не удалось обновить уведомление таймера", it)
+        }
     }
 
     private fun buildNotification(state: TimerState): Notification {
@@ -318,6 +328,7 @@ class TimerService : Service() {
     }
 
     companion object {
+        private const val TAG = "GiriBroTimer"
         private const val ACTION_START = "ru.petproject.giribro.timer.START"
         private const val ACTION_PAUSE = "ru.petproject.giribro.timer.PAUSE"
         private const val ACTION_RESUME = "ru.petproject.giribro.timer.RESUME"
@@ -337,12 +348,11 @@ class TimerService : Service() {
         private val _state = MutableStateFlow(TimerState())
         val state: StateFlow<TimerState> = _state.asStateFlow()
 
-        fun start(context: Context, config: TimerConfig) {
+        fun start(context: Context, config: TimerConfig): Boolean =
             startPlan(context, config.toPlan())
-        }
 
-        fun startPlan(context: Context, plan: TimerPlan) {
-            if (plan.steps.isEmpty()) return
+        fun startPlan(context: Context, plan: TimerPlan): Boolean {
+            if (plan.steps.isEmpty()) return false
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_PLAN_TITLE, plan.title)
@@ -355,7 +365,11 @@ class TimerService : Service() {
                 putExtra(EXTRA_PLAN_MANUAL, plan.steps.map { it.manual }.toBooleanArray())
                 putStringArrayListExtra(EXTRA_PLAN_TASKS, ArrayList(plan.steps.map { it.task }))
             }
-            ContextCompat.startForegroundService(context, intent)
+            return runCatching {
+                ContextCompat.startForegroundService(context, intent)
+            }.onFailure {
+                Log.e(TAG, "Не удалось запустить foreground-сервис таймера", it)
+            }.isSuccess
         }
 
         fun pause(context: Context) = command(context, ACTION_PAUSE)

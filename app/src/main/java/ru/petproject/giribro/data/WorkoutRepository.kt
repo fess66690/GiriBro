@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.map
 class WorkoutRepository(private val dao: WorkoutDao) {
 
     fun observeAll(): Flow<List<Workout>> =
-        dao.observeAll().map { entities -> entities.map { it.toModel() } }
+        dao.observeAll().map { entities -> entities.mapNotNull { it.toModelOrNull() } }
 
     suspend fun save(workout: Workout): Long = dao.upsert(workout.toEntity())
 

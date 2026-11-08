@@ -39,19 +39,22 @@ class SettingsRepository(context: Context) {
     val state: StateFlow<Settings> = _state.asStateFlow()
 
     var demoSeeded: Boolean
-        get() = prefs.getBoolean(KEY_DEMO_SEEDED, false)
+        get() = runCatching { prefs.getBoolean(KEY_DEMO_SEEDED, false) }.getOrDefault(false)
         set(value) = prefs.edit().putBoolean(KEY_DEMO_SEEDED, value).apply()
 
     private fun load(): Settings = Settings(
         themeMode = runCatching {
             ThemeMode.valueOf(prefs.getString(KEY_THEME, ThemeMode.DARK.name)!!)
         }.getOrDefault(ThemeMode.DARK),
-        weeklyGoal = prefs.getInt(KEY_WEEKLY_GOAL, 3).coerceIn(1, 14),
-        defaultWeight = prefs.getInt(KEY_DEFAULT_WEIGHT, 24).coerceIn(4, 48),
+        weeklyGoal = readInt(KEY_WEEKLY_GOAL, 3).coerceIn(1, 14),
+        defaultWeight = readInt(KEY_DEFAULT_WEIGHT, 24).coerceIn(4, 48),
         statsPeriod = runCatching {
             StatsPeriod.valueOf(prefs.getString(KEY_STATS_PERIOD, StatsPeriod.MONTH.name)!!)
         }.getOrDefault(StatsPeriod.MONTH)
     )
+
+    private fun readInt(key: String, defaultValue: Int): Int =
+        runCatching { prefs.getInt(key, defaultValue) }.getOrDefault(defaultValue)
 
     fun setTheme(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME, mode.name).apply()

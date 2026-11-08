@@ -3,6 +3,7 @@ package ru.petproject.giribro.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -75,7 +76,9 @@ fun TimerScreen(onBack: () -> Unit = {}) {
         ) {
             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        TimerService.start(context, config)
+        if (!TimerService.start(context, config)) {
+            Toast.makeText(context, "Не удалось запустить таймер", Toast.LENGTH_SHORT).show()
+        }
     }
 
     if (active || state.phase == TimerPhase.DONE) {
@@ -88,7 +91,16 @@ fun TimerScreen(onBack: () -> Unit = {}) {
             onComplete = { TimerService.complete(context) },
             onStop = { TimerService.stop(context) },
             onRestart = {
-                state.plan?.let { TimerService.startPlan(context, it) } ?: start()
+                val plan = state.plan
+                if (plan == null) {
+                    start()
+                } else if (!TimerService.startPlan(context, plan)) {
+                    Toast.makeText(
+                        context,
+                        "Не удалось запустить таймер",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         )
         return

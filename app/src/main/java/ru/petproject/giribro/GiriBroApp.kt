@@ -1,6 +1,7 @@
 package ru.petproject.giribro
 
 import android.app.Application
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,15 +22,30 @@ class GiriBroApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        TimerNotifications.ensureChannel(this)
+        runCatching { TimerNotifications.ensureChannel(this) }
+            .onFailure { Log.e(TAG, "Не удалось создать канал уведомлений", it) }
         seedDemoIfNeeded()
     }
 
     private fun seedDemoIfNeeded() {
-        if (settings.demoSeeded) return
-        settings.demoSeeded = true
+        val alreadySeeded = runCatching { settings.demoSeeded }.getOrDefault(true)
+        if (alreadySeeded) return
+
+        runCatching { settings.demoSeeded = true }
+            .onFailure {
+                Log.e(TAG, "Не удалось сохранить флаг демо-данных", it)
+                return
+            }
+
         appScope.launch {
-            DemoData.workouts().forEach { workouts.save(it) }
+            DemoData.workouts().forEach { workout ->
+                runCatching { workouts.save(workout) }
+                    .onFailure { Log.e(TAG, "Не удалось сохранить демо-тренировку", it) }
+            }
         }
+    }
+
+    private companion object {
+        const val TAG = "GiriBro"
     }
 }

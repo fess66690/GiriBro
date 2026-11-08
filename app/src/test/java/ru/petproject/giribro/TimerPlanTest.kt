@@ -118,4 +118,62 @@ class TimerPlanTest {
         assertEquals(TimerStepKind.WORK, plan.steps.first().kind)
         assertEquals(1, plan.steps.size)
     }
+
+    @Test
+    fun `interval config clamps zero values`() {
+        val plan = TimerConfig(workSec = 0, restSec = 0, rounds = 0, prepSec = 0).toPlan()
+
+        assertEquals(1, plan.workCount)
+        assertEquals(1, plan.steps.single().seconds)
+        assertEquals(TimerStepKind.WORK, plan.steps.single().kind)
+        assertEquals(1, plan.totalSec)
+    }
+
+    @Test
+    fun `interval config skips zero rest and preparation`() {
+        val plan = TimerConfig(workSec = 60, restSec = 0, rounds = 2, prepSec = 0).toPlan()
+
+        assertEquals(listOf(TimerStepKind.WORK, TimerStepKind.WORK), plan.steps.map { it.kind })
+        assertEquals(120, plan.totalSec)
+        assertEquals(120, plan.workSec)
+        assertEquals(0, plan.restSec)
+    }
+
+    @Test
+    fun `workout does not add rest after the final set`() {
+        val plan = workout(
+            Section(
+                SectionType.JERK,
+                listOf(
+                    SetEntry(24, 20, 60, restSec = 45),
+                    SetEntry(24, 15, 60, restSec = 90)
+                )
+            )
+        ).toTimerPlan(prepSec = 0)
+
+        assertEquals(
+            listOf(TimerStepKind.WORK, TimerStepKind.REST, TimerStepKind.WORK),
+            plan.steps.map { it.kind }
+        )
+        assertEquals(45, plan.steps[1].seconds)
+        assertEquals(45, plan.restSec)
+        assertEquals(60, plan.steps.last().seconds)
+    }
+
+    @Test
+    fun `workout with zero rest has only work steps`() {
+        val plan = workout(
+            Section(
+                SectionType.JERK,
+                listOf(
+                    SetEntry(24, 20, 60, restSec = 0),
+                    SetEntry(24, 15, 60, restSec = 0)
+                )
+            )
+        ).toTimerPlan(prepSec = 0)
+
+        assertEquals(2, plan.workCount)
+        assertEquals(2, plan.steps.size)
+        assertTrue(plan.steps.all { it.kind == TimerStepKind.WORK })
+    }
 }

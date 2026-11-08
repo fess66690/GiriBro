@@ -3,6 +3,7 @@ package ru.petproject.giribro.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -95,6 +96,7 @@ fun NewWorkoutScreen(
     defaultWeight: Int,
     initialWorkout: Workout? = null,
     repeat: Boolean = false,
+    saving: Boolean = false,
     onSave: (Workout) -> Unit,
     onClose: () -> Unit,
     vm: NewWorkoutViewModel = viewModel()
@@ -138,7 +140,10 @@ fun NewWorkoutScreen(
         ) {
             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        TimerService.startPlan(context, plan)
+        if (!TimerService.startPlan(context, plan)) {
+            Toast.makeText(context, "Не удалось запустить таймер", Toast.LENGTH_SHORT).show()
+            return
+        }
         timerOpen = true
     }
 
@@ -160,9 +165,9 @@ fun NewWorkoutScreen(
                 )
                 TextButton(
                     onClick = { onSave(vm.toWorkout()) },
-                    enabled = draft.isValid
+                    enabled = draft.isValid && !saving
                 ) {
-                    Text("Сохранить")
+                    Text(if (saving) "Сохраняем…" else "Сохранить")
                 }
             }
 
@@ -284,12 +289,21 @@ fun NewWorkoutScreen(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
+                    if (draft.sections.isNotEmpty()) {
+                        draft.validationError?.let { problem ->
+                            Text(
+                                problem,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                 }
                 Button(
                     onClick = { onSave(vm.toWorkout()) },
-                    enabled = draft.isValid
+                    enabled = draft.isValid && !saving
                 ) {
-                    Text("В дневник")
+                    Text(if (saving) "Сохраняем…" else "В дневник")
                 }
             }
         }
@@ -309,7 +323,15 @@ fun NewWorkoutScreen(
                     timerOpen = false
                 },
                 onRestart = {
-                    activeWorkoutTimer.plan?.let { TimerService.startPlan(context, it) }
+                    activeWorkoutTimer.plan?.let { activePlan ->
+                        if (!TimerService.startPlan(context, activePlan)) {
+                            Toast.makeText(
+                                context,
+                                "Не удалось запустить таймер",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
                 }
             )
         }

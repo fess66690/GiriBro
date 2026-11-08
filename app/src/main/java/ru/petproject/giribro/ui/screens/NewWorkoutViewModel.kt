@@ -9,6 +9,7 @@ import ru.petproject.giribro.data.Section
 import ru.petproject.giribro.data.SectionType
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.Workout
+import ru.petproject.giribro.data.WorkoutValidator
 import java.time.LocalDate
 
 class NewWorkoutViewModel : ViewModel() {
@@ -44,7 +45,14 @@ class NewWorkoutViewModel : ViewModel() {
 
         val durationSec: Int get() = sections.sumOf { section -> section.sets.sumOf { it.durationSec } }
 
-        val isValid: Boolean get() = sections.any { it.sets.isNotEmpty() }
+        /** Первая проблема, мешающая сохранить тренировку; null — всё в порядке. */
+        val validationError: String?
+            get() = WorkoutValidator.validate(
+                sections = sections.map { Section(it.type, it.sets) },
+                note = note.trim()
+            )
+
+        val isValid: Boolean get() = validationError == null
 
         val timedSetsCount: Int
             get() = sections.sumOf { section -> section.sets.count { it.durationSec > 0 } }
