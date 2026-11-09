@@ -1,6 +1,7 @@
 package ru.petproject.giribro
 
 import android.app.Application
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,11 +16,17 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ru.petproject.giribro.data.BackupFormatException
+import ru.petproject.giribro.data.DiaryBackup
+import ru.petproject.giribro.data.DiaryBackupJson
 import ru.petproject.giribro.data.Settings
 import ru.petproject.giribro.data.StatsPeriod
 import ru.petproject.giribro.data.ThemeMode
 import ru.petproject.giribro.data.Workout
 import ru.petproject.giribro.data.WorkoutValidator
+import ru.petproject.giribro.util.pluralRu
+import java.io.ByteArrayOutputStream
+import java.io.IOException
 
 /** Сообщение для пользователя: ошибка операции или подтверждение успеха. */
 data class UiMessage(
@@ -36,6 +43,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
+
+    private val _backupBusy = MutableStateFlow(false)
+    val backupBusy: StateFlow<Boolean> = _backupBusy.asStateFlow()
+
+    private val _pendingImport = MutableStateFlow<DiaryBackup?>(null)
+    val pendingImport: StateFlow<DiaryBackup?> = _pendingImport.asStateFlow()
 
     val workouts: StateFlow<List<Workout>> = app.workouts.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -104,6 +117,98 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Сохраняет дневник и настройки в выбранный пользователем файл. */
+    fun exportBackup(uri: Uri) {
+        if (_backupBusy.value) return
+        _backupBusy.value = true
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val text = DiaryBackupJson.encode(
+                        workouts = app.workouts.all(),
+                        settings = app.settings.state.value
+                    )
+                    writeBackupText(uri, text)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Не удалось сохранить резервную копию", e)
+                showMessage("Не удалось сохранить резервную копию. Попробуйте ещё раз.", isError = true)
+                return@launch
+            } finally {
+                _backupBusy.value = false
+            }
+            showMessage("Резервная копия сохранена")
+        }
+    }
+
+    /** Читает файл и показывает подтверждение перед заменой дневника. */
+    fun loadBackup(uri: Uri) {
+        if (_backupBusy.value || _pendingImport.value != null) return
+        _backupBusy.value = true
+        viewModelScope.launch {
+            try {
+                val backup = withContext(Dispatchers.IO) {
+                    DiaryBackupJson.decode(readBackupText(uri))
+                }
+                _pendingImport.value = backup
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: BackupFormatException) {
+                Log.w(TAG, "Некорректная резервная копия", e)
+                showMessage(e.message ?: "Не удалось прочитать резервную копию.", isError = true)
+            } catch (e: Exception) {
+                Log.e(TAG, "Не удалось прочитать резервную копию", e)
+                showMessage("Не удалось прочитать файл резервной копии.", isError = true)
+            } finally {
+                _backupBusy.value = false
+            }
+        }
+    }
+
+    fun cancelImport() {
+        if (!_backupBusy.value) _pendingImport.value = null
+    }
+
+    /** Заменяет текущий дневник и настройки данными из подтверждённой копии. */
+    fun confirmImport() {
+        val backup = _pendingImport.value ?: return
+        if (_backupBusy.value) return
+        _backupBusy.value = true
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { app.workouts.replaceAll(backup.workouts) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Не удалось восстановить резервную копию", e)
+                _backupBusy.value = false
+                showMessage("Не удалось восстановить дневник. Текущие данные не изменены.", isError = true)
+                return@launch
+            }
+
+            var settingsError: Throwable? = null
+            backup.settings?.let { settings ->
+                runCatching { app.settings.apply(settings) }
+                    .onFailure { settingsError = it }
+            }
+            runCatching { app.settings.demoSeeded = true }
+                .onFailure { Log.e(TAG, "Не удалось сохранить флаг демо-данных", it) }
+
+            _pendingImport.value = null
+            _backupBusy.value = false
+            if (settingsError != null) {
+                Log.e(TAG, "Дневник восстановлен, но настройки не применились", settingsError)
+                showMessage("Дневник восстановлен, но настройки применить не удалось.", isError = true)
+            } else {
+                val count = backup.workouts.size
+                val word = pluralRu(count, "тренировка", "тренировки", "тренировок")
+                showMessage("Восстановлено: $count $word")
+            }
+        }
+    }
+
     fun setTheme(mode: ThemeMode) {
         updateSetting("Не удалось сохранить тему") { app.settings.setTheme(mode) }
     }
@@ -121,6 +226,39 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun setStatsPeriod(period: StatsPeriod) {
         updateSetting("Не удалось сохранить период статистики") {
             app.settings.setStatsPeriod(period)
+        }
+    }
+
+    private fun readBackupText(uri: Uri): String {
+        val input = app.contentResolver.openInputStream(uri)
+            ?: throw IOException("Не удалось открыть файл")
+        return input.use { stream ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(16 * 1024)
+            var total = 0
+            while (true) {
+                val read = stream.read(buffer)
+                if (read < 0) break
+                total += read
+                if (total > DiaryBackupJson.MAX_FILE_BYTES) {
+                    throw BackupFormatException(
+                        "Файл больше ${DiaryBackupJson.MAX_FILE_BYTES / (1024 * 1024)} МБ."
+                    )
+                }
+                output.write(buffer, 0, read)
+            }
+            output.toByteArray().toString(Charsets.UTF_8)
+        }
+    }
+
+    private fun writeBackupText(uri: Uri, text: String) {
+        // Некоторые файловые провайдеры не поддерживают режим "wt".
+        val output = runCatching { app.contentResolver.openOutputStream(uri, "wt") }
+            .getOrNull()
+            ?: app.contentResolver.openOutputStream(uri)
+            ?: throw IOException("Не удалось открыть файл для записи")
+        output.use { stream ->
+            stream.write((text + "\n").toByteArray(Charsets.UTF_8))
         }
     }
 

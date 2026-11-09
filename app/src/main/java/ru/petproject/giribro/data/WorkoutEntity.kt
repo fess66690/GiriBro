@@ -44,22 +44,38 @@ object WorkoutJson {
         return root.toString()
     }
 
-    fun decode(raw: String): List<Section> = runCatching {
+    /**
+     * Разбирает JSON секций.
+     *
+     * [strict] нужен для импорта резервной копии: там нельзя молча терять
+     * неизвестные упражнения или повреждённые подходы. Для обычного чтения из
+     * Room режим остаётся мягким, чтобы одна плохая запись не роняла дневник.
+     */
+    fun decode(raw: String, strict: Boolean = false): List<Section> = runCatching {
         val root = JSONArray(raw)
         buildList {
             for (i in 0 until root.length()) {
-                val obj = root.optJSONObject(i) ?: continue
+                val obj = root.optJSONObject(i)
+                    ?: if (strict) error("повреждено упражнение №${i + 1}") else continue
+                val rawType = obj.optString("type")
                 val type = runCatching {
-                    SectionType.valueOf(obj.optString("type"))
-                }.getOrNull() ?: continue
+                    SectionType.valueOf(rawType)
+                }.getOrNull()
+                    ?: if (strict) error("неизвестное упражнение «$rawType»") else continue
 
-                val setsJson = obj.optJSONArray("sets") ?: JSONArray()
+                val setsJson = obj.optJSONArray("sets")
+                    ?: if (strict) error("у упражнения «${type.label}» нет подходов") else JSONArray()
                 // В старых записях отдых хранился на упражнении, а не на подходе.
                 val legacyRest = obj.optInt("rest", SetEntry.DEFAULT_REST_SEC)
                     .coerceIn(0, SetEntry.MAX_REST_SEC)
                 val sets = buildList {
                     for (j in 0 until setsJson.length()) {
-                        val set = setsJson.optJSONObject(j) ?: continue
+                        val set = setsJson.optJSONObject(j)
+                            ?: if (strict) {
+                                error("повреждён подход №${j + 1} в «${type.label}»")
+                            } else {
+                                continue
+                            }
                         add(
                             SetEntry(
                                 weightKg = set.optInt("w"),
@@ -71,12 +87,17 @@ object WorkoutJson {
                         )
                     }
                 }
+                if (sets.isEmpty() && strict) {
+                    error("у упражнения «${type.label}» нет подходов")
+                }
                 if (sets.isNotEmpty()) {
                     add(Section(type = type, sets = sets))
                 }
             }
         }
-    }.getOrDefault(emptyList())
+    }.getOrElse { error ->
+        if (strict) throw error else emptyList()
+    }
 }
 
 fun WorkoutEntity.toModel(): Workout = Workout(

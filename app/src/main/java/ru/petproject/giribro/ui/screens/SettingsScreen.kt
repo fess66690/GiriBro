@@ -1,5 +1,7 @@
 package ru.petproject.giribro.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,14 +43,32 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.petproject.giribro.AppViewModel
+import ru.petproject.giribro.data.DiaryBackupJson
 import ru.petproject.giribro.data.ThemeMode
 import ru.petproject.giribro.ui.components.SectionTitle
+import ru.petproject.giribro.util.pluralRu
+import ru.petproject.giribro.util.ruDayMonth
+import java.time.Instant
+import java.time.ZoneId
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(vm: AppViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val backupBusy by vm.backupBusy.collectAsStateWithLifecycle()
+    val pendingImport by vm.pendingImport.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(DiaryBackupJson.MIME_TYPE)
+    ) { uri ->
+        uri?.let(vm::exportBackup)
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let(vm::loadBackup)
+    }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -135,6 +155,52 @@ fun SettingsScreen(vm: AppViewModel) {
         }
 
         item {
+            SettingsCard("Резервная копия") {
+                Text(
+                    "Сохраните тренировки и настройки в JSON-файл или восстановите их из копии.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            exportLauncher.launch(DiaryBackupJson.suggestedFileName())
+                        },
+                        enabled = !backupBusy,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(if (backupBusy) "Подождите…" else "Сохранить копию")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            importLauncher.launch(
+                                arrayOf(
+                                    DiaryBackupJson.MIME_TYPE,
+                                    "text/plain",
+                                    "application/octet-stream"
+                                )
+                            )
+                        },
+                        enabled = !backupBusy,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Восстановить")
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Восстановление заменит текущий дневник и настройки данными из файла.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        item {
             SettingsCard("О приложении") {
                 Text(
                     "ГириБро · 0.1 · прототип",
@@ -151,7 +217,7 @@ fun SettingsScreen(vm: AppViewModel) {
                 HorizontalDivider(Modifier.padding(vertical = 12.dp))
                 Text(
                     "Чего пока нет: облачной синхронизации, ленты товарищей, нормативов ЕВСК, " +
-                        "импорта тренировок и генератора программ. Это следующий этап.",
+                        "импорта из Polar/GPX и генератора программ. Это следующий этап.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -173,6 +239,44 @@ fun SettingsScreen(vm: AppViewModel) {
                 Text("Очистить дневник", color = MaterialTheme.colorScheme.error)
             }
         }
+    }
+
+    pendingImport?.let { backup ->
+        val count = backup.workouts.size
+        val word = pluralRu(count, "тренировка", "тренировки", "тренировок")
+        val savedAt = backup.exportedAt
+            .takeIf { it > 0 }
+            ?.let {
+                Instant.ofEpochMilli(it)
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDate()
+                    .ruDayMonth()
+            }
+        val source = if (savedAt != null) ", сохранена $savedAt" else ""
+        AlertDialog(
+            onDismissRequest = { if (!backupBusy) vm.cancelImport() },
+            title = { Text("Восстановить копию?") },
+            text = {
+                Text(
+                    "В копии: $count $word$source. Текущий дневник и настройки " +
+                        "будут заменены. Отменить это действие нельзя."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { vm.confirmImport() },
+                    enabled = !backupBusy
+                ) {
+                    Text(if (backupBusy) "Восстанавливаем…" else "Восстановить")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { vm.cancelImport() },
+                    enabled = !backupBusy
+                ) { Text("Отмена") }
+            }
+        )
     }
 
     if (showClearDialog) {

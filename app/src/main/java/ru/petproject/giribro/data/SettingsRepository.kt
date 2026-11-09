@@ -78,6 +78,21 @@ class SettingsRepository(context: Context) {
         _state.value = _state.value.copy(statsPeriod = period)
     }
 
+    /** Применяет настройки из резервной копии одним пакетом. */
+    fun apply(settings: Settings) {
+        val value = settings.copy(
+            weeklyGoal = settings.weeklyGoal.coerceIn(1, 14),
+            defaultWeight = settings.defaultWeight.coerceIn(4, 48)
+        )
+        prefs.edit()
+            .putString(KEY_THEME, value.themeMode.name)
+            .putInt(KEY_WEEKLY_GOAL, value.weeklyGoal)
+            .putInt(KEY_DEFAULT_WEIGHT, value.defaultWeight)
+            .putString(KEY_STATS_PERIOD, value.statsPeriod.name)
+            .apply()
+        _state.value = value
+    }
+
     private companion object {
         const val KEY_THEME = "theme_mode"
         const val KEY_WEEKLY_GOAL = "weekly_goal"

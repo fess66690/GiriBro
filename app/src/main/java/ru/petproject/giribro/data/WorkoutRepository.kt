@@ -8,9 +8,15 @@ class WorkoutRepository(private val dao: WorkoutDao) {
     fun observeAll(): Flow<List<Workout>> =
         dao.observeAll().map { entities -> entities.mapNotNull { it.toModelOrNull() } }
 
+    suspend fun all(): List<Workout> = dao.getAll().mapNotNull { it.toModelOrNull() }
+
     suspend fun save(workout: Workout): Long = dao.upsert(workout.toEntity())
 
     suspend fun delete(workout: Workout) = dao.delete(workout.toEntity())
 
     suspend fun clear() = dao.clear()
+
+    /** Восстанавливает копию: новые id выдаст база, старые записи заменяются. */
+    suspend fun replaceAll(workouts: List<Workout>) =
+        dao.replaceAll(workouts.map { it.copy(id = 0L).toEntity() })
 }
