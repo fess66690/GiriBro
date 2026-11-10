@@ -10,6 +10,33 @@ import java.time.temporal.TemporalAdjusters
  */
 object DemoData {
 
+    /** Несколько замеров тела, чтобы новый экран сразу показывал динамику. */
+    fun measurements(today: LocalDate = LocalDate.now()): List<BodyMeasurement> {
+        val samples = listOf(
+            DemoSample(42, 85.0, 91.0, 106.0, 102.0, 36.5, 59.5, "Утро, натощак"),
+            DemoSample(35, 84.6, 90.2, 105.6, 101.8, 36.4, 59.2, ""),
+            DemoSample(28, 84.2, 89.4, 105.2, 101.4, 36.3, 59.0, "После разгрузочной недели"),
+            DemoSample(21, 83.7, 88.5, 104.8, 101.0, 36.2, 58.8, ""),
+            DemoSample(14, 83.1, 87.6, 104.5, 100.6, 36.1, 58.7, ""),
+            DemoSample(7, 82.6, 86.7, 104.2, 100.3, 36.0, 58.6, "Утро, натощак"),
+            DemoSample(1, 82.1, 86.0, 104.0, 100.0, 36.0, 58.5, "")
+        )
+        return samples.map { sample ->
+            val date = today.minusDays(sample.daysAgo)
+            BodyMeasurement(
+                date = date,
+                weightKg = sample.weightKg,
+                waistCm = sample.waistCm,
+                chestCm = sample.chestCm,
+                hipsCm = sample.hipsCm,
+                armCm = sample.armCm,
+                thighCm = sample.thighCm,
+                note = sample.note,
+                createdAt = date.toEpochDay() * 86_400_000L + 8 * 3_600_000L
+            )
+        }
+    }
+
     fun workouts(today: LocalDate = LocalDate.now()): List<Workout> {
         val result = mutableListOf<Workout>()
         val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
@@ -91,4 +118,15 @@ object DemoData {
             createdAt = date.toEpochDay() * 86_400_000L + index * 3_600_000L
         )
     }
+
+    private data class DemoSample(
+        val daysAgo: Long,
+        val weightKg: Double,
+        val waistCm: Double,
+        val chestCm: Double,
+        val hipsCm: Double,
+        val armCm: Double,
+        val thighCm: Double,
+        val note: String
+    )
 }

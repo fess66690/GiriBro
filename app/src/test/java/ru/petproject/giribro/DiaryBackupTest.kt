@@ -1,5 +1,6 @@
 package ru.petproject.giribro
 
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -7,6 +8,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.petproject.giribro.data.BackupFormatException
+import ru.petproject.giribro.data.BodyMeasurement
 import ru.petproject.giribro.data.DiaryBackupJson
 import ru.petproject.giribro.data.Section
 import ru.petproject.giribro.data.SectionType
@@ -71,7 +73,83 @@ class DiaryBackupTest {
     fun `empty diary is a valid backup`() {
         val backup = DiaryBackupJson.decode(DiaryBackupJson.encode(emptyList(), settings))
         assertTrue(backup.workouts.isEmpty())
+        assertTrue(backup.bodyMeasurements.isEmpty())
         assertEquals(settings, backup.settings)
+    }
+
+    @Test
+    fun `body measurements survive encode and decode`() {
+        val measurements = listOf(
+            BodyMeasurement(
+                date = date,
+                weightKg = 82.5,
+                waistCm = 86.0,
+                chestCm = 104.0,
+                hipsCm = 100.0,
+                armCm = 36.0,
+                thighCm = 58.5,
+                note = "Утро, натощак",
+                createdAt = 789L
+            ),
+            BodyMeasurement(
+                date = date.minusWeeks(1),
+                weightKg = 83.1,
+                waistCm = 87.0,
+                createdAt = 700L
+            )
+        )
+
+        val backup = DiaryBackupJson.decode(
+            DiaryBackupJson.encode(
+                workouts = listOf(workout()),
+                settings = settings,
+                bodyMeasurements = measurements,
+                exportedAt = 456L
+            )
+        )
+
+        assertEquals(measurements, backup.bodyMeasurements)
+    }
+
+    @Test
+    fun `version 1 backup without body measurements is accepted`() {
+        val root = JSONObject(DiaryBackupJson.encode(listOf(workout()), settings))
+            .put("version", 1)
+        root.remove("bodyMeasurements")
+
+        val backup = DiaryBackupJson.decode(root.toString())
+
+        assertEquals(1, backup.workouts.size)
+        assertTrue(backup.bodyMeasurements.isEmpty())
+    }
+
+    @Test
+    fun `invalid body measurement blocks the whole import`() {
+        val raw = JSONObject(DiaryBackupJson.encode(emptyList(), settings))
+            .put(
+                "bodyMeasurements",
+                JSONArray().put(
+                    JSONObject()
+                        .put("date", date.toString())
+                        .put("weightKg", 0.0)
+                )
+            )
+            .toString()
+
+        assertThrows(BackupFormatException::class.java) {
+            DiaryBackupJson.decode(raw)
+        }
+    }
+
+    @Test
+    fun `broken body measurements list blocks the whole import`() {
+        val raw = JSONObject(DiaryBackupJson.encode(emptyList(), settings))
+            .put("bodyMeasurements", "не список")
+            .toString()
+
+        assertThrows(BackupFormatException::class.java) {
+            DiaryBackupJson.decode(raw)
+        }
     }
 
     @Test

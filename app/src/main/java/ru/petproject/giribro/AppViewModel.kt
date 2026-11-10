@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -17,6 +18,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.petproject.giribro.data.BackupFormatException
+import ru.petproject.giribro.data.BodyMeasurement
+import ru.petproject.giribro.data.BodyMeasurementValidator
 import ru.petproject.giribro.data.DiaryBackup
 import ru.petproject.giribro.data.DiaryBackupJson
 import ru.petproject.giribro.data.Settings
@@ -44,6 +47,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
 
+    private val _bodySaving = MutableStateFlow(false)
+    val bodySaving: StateFlow<Boolean> = _bodySaving.asStateFlow()
+
     private val _backupBusy = MutableStateFlow(false)
     val backupBusy: StateFlow<Boolean> = _backupBusy.asStateFlow()
 
@@ -51,6 +57,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val pendingImport: StateFlow<DiaryBackup?> = _pendingImport.asStateFlow()
 
     val workouts: StateFlow<List<Workout>> = app.workouts.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val bodyMeasurements: StateFlow<List<BodyMeasurement>> = app.bodyMeasurements.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val settings: StateFlow<Settings> = app.settings.state
@@ -99,10 +108,56 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Сохраняет замер тела и только после успешной записи вызывает [onSaved]. */
+    fun saveBodyMeasurement(measurement: BodyMeasurement, onSaved: () -> Unit = {}) {
+        BodyMeasurementValidator.validate(measurement)?.let { problem ->
+            showMessage(problem, isError = true)
+            return
+        }
+        if (_bodySaving.value) return
+
+        _bodySaving.value = true
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { app.bodyMeasurements.save(measurement) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Не удалось сохранить замер", e)
+                showMessage("Не удалось сохранить замер. Попробуйте ещё раз.", isError = true)
+                return@launch
+            } finally {
+                _bodySaving.value = false
+            }
+            showMessage(if (measurement.id == 0L) "Замер сохранён" else "Замер обновлён")
+            onSaved()
+        }
+    }
+
+    fun deleteBodyMeasurement(measurement: BodyMeasurement) {
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { app.bodyMeasurements.delete(measurement) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Не удалось удалить замер", e)
+                showMessage("Не удалось удалить замер. Попробуйте ещё раз.", isError = true)
+                return@launch
+            }
+            showMessage("Замер удалён")
+        }
+    }
+
     fun clearAll() {
         viewModelScope.launch {
             try {
-                withContext(Dispatchers.IO) { app.workouts.clear() }
+                withContext(Dispatchers.IO) {
+                    app.database.withTransaction {
+                        app.workouts.clear()
+                        app.bodyMeasurements.clear()
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -113,7 +168,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
             runCatching { app.settings.demoSeeded = true }
                 .onFailure { Log.e(TAG, "Не удалось сохранить флаг демо-данных", it) }
-            showMessage("Дневник очищен")
+            showMessage("Дневник и замеры очищены")
         }
     }
 
@@ -126,6 +181,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.IO) {
                     val text = DiaryBackupJson.encode(
                         workouts = app.workouts.all(),
+                        bodyMeasurements = app.bodyMeasurements.all(),
                         settings = app.settings.state.value
                     )
                     writeBackupText(uri, text)
@@ -178,7 +234,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _backupBusy.value = true
         viewModelScope.launch {
             try {
-                withContext(Dispatchers.IO) { app.workouts.replaceAll(backup.workouts) }
+                withContext(Dispatchers.IO) {
+                    app.database.withTransaction {
+                        app.workouts.replaceAll(backup.workouts)
+                        app.bodyMeasurements.replaceAll(backup.bodyMeasurements)
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -204,7 +265,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 val count = backup.workouts.size
                 val word = pluralRu(count, "тренировка", "тренировки", "тренировок")
-                showMessage("Восстановлено: $count $word")
+                val bodyCount = backup.bodyMeasurements.size
+                val bodyPart = if (bodyCount > 0) {
+                    " и $bodyCount " + pluralRu(bodyCount, "замер", "замера", "замеров")
+                } else {
+                    ""
+                }
+                showMessage("Восстановлено: $count $word$bodyPart")
             }
         }
     }

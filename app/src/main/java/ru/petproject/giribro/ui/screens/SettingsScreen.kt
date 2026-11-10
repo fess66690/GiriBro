@@ -157,7 +157,8 @@ fun SettingsScreen(vm: AppViewModel) {
         item {
             SettingsCard("Резервная копия") {
                 Text(
-                    "Сохраните тренировки и настройки в JSON-файл или восстановите их из копии.",
+                    "Сохраните тренировки, замеры тела и настройки в JSON-файл " +
+                        "или восстановите их из копии.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -193,7 +194,7 @@ fun SettingsScreen(vm: AppViewModel) {
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Восстановление заменит текущий дневник и настройки данными из файла.",
+                    "Восстановление заменит текущий дневник, замеры и настройки данными из файла.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -209,8 +210,8 @@ fun SettingsScreen(vm: AppViewModel) {
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Гиревой дневник: тоннаж, подъёмы, серия, интервальный таймер и статистика. " +
-                        "Данные хранятся локально на устройстве.",
+                    "Гиревой дневник: тоннаж, подъёмы, серия, интервальный таймер, " +
+                        "вес и замеры тела, статистика. Данные хранятся локально на устройстве.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -244,6 +245,8 @@ fun SettingsScreen(vm: AppViewModel) {
     pendingImport?.let { backup ->
         val count = backup.workouts.size
         val word = pluralRu(count, "тренировка", "тренировки", "тренировок")
+        val bodyCount = backup.bodyMeasurements.size
+        val bodyWord = pluralRu(bodyCount, "замер", "замера", "замеров")
         val savedAt = backup.exportedAt
             .takeIf { it > 0 }
             ?.let {
@@ -258,8 +261,9 @@ fun SettingsScreen(vm: AppViewModel) {
             title = { Text("Восстановить копию?") },
             text = {
                 Text(
-                    "В копии: $count $word$source. Текущий дневник и настройки " +
-                        "будут заменены. Отменить это действие нельзя."
+                    "В копии: $count $word и $bodyCount $bodyWord$source. " +
+                        "Текущий дневник, замеры и настройки будут заменены. " +
+                        "Отменить это действие нельзя."
                 )
             },
             confirmButton = {
@@ -283,7 +287,12 @@ fun SettingsScreen(vm: AppViewModel) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
             title = { Text("Очистить дневник?") },
-            text = { Text("Все тренировки будут удалены с этого устройства. Отменить действие нельзя.") },
+            text = {
+                Text(
+                    "Все тренировки и замеры тела будут удалены с этого устройства. " +
+                        "Отменить действие нельзя."
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {

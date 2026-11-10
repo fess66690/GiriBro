@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import ru.petproject.giribro.data.AppDatabase
+import ru.petproject.giribro.data.BodyMeasurementRepository
 import ru.petproject.giribro.data.DemoData
 import ru.petproject.giribro.data.SettingsRepository
 import ru.petproject.giribro.data.WorkoutRepository
@@ -16,6 +17,9 @@ class GiriBroApp : Application() {
 
     val database: AppDatabase by lazy { AppDatabase.get(this) }
     val workouts: WorkoutRepository by lazy { WorkoutRepository(database.workoutDao()) }
+    val bodyMeasurements: BodyMeasurementRepository by lazy {
+        BodyMeasurementRepository(database.bodyMeasurementDao())
+    }
     val settings: SettingsRepository by lazy { SettingsRepository(this) }
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -41,6 +45,10 @@ class GiriBroApp : Application() {
             DemoData.workouts().forEach { workout ->
                 runCatching { workouts.save(workout) }
                     .onFailure { Log.e(TAG, "Не удалось сохранить демо-тренировку", it) }
+            }
+            DemoData.measurements().forEach { measurement ->
+                runCatching { bodyMeasurements.save(measurement) }
+                    .onFailure { Log.e(TAG, "Не удалось сохранить демо-замер", it) }
             }
         }
     }

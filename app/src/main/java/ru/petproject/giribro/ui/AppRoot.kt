@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.Scale
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
@@ -35,6 +36,7 @@ import kotlinx.coroutines.flow.collect
 import ru.petproject.giribro.AppViewModel
 import ru.petproject.giribro.timer.TimerPhase
 import ru.petproject.giribro.timer.TimerService
+import ru.petproject.giribro.ui.screens.BodyScreen
 import ru.petproject.giribro.ui.screens.DiaryScreen
 import ru.petproject.giribro.ui.screens.NewWorkoutScreen
 import ru.petproject.giribro.ui.screens.SettingsScreen
@@ -50,6 +52,7 @@ private data class BottomItem(
 private val bottomItems = listOf(
     BottomItem("diary", "Дневник", Icons.Outlined.FitnessCenter),
     BottomItem("stats", "Статистика", Icons.Outlined.Insights),
+    BottomItem("body", "Замеры", Icons.Outlined.Scale),
     BottomItem("timer", "Таймер", Icons.Outlined.Timer),
     BottomItem("settings", "Ещё", Icons.Outlined.Tune)
 )
@@ -129,6 +132,7 @@ fun AppRoot(vm: AppViewModel) {
                     )
                 }
                 composable("stats") { StatsScreen(vm) }
+                composable("body") { BodyScreen(vm) }
                 composable("timer") {
                     TimerScreen(
                         onBack = {
