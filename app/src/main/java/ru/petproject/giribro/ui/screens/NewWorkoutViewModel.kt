@@ -98,6 +98,33 @@ class NewWorkoutViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Добавляет готовые упражнения из быстрого ввода.
+     * Подходы того же упражнения дописываются в существующий блок, чтобы
+     * в конструкторе не появлялись два одинаковых раздела подряд.
+     */
+    fun addSections(sections: List<Section>) {
+        if (sections.isEmpty()) return
+        _draft.update { draft ->
+            val updated = draft.sections.toMutableList()
+            sections.forEach { section ->
+                val index = updated.indexOfFirst { it.type == section.type }
+                if (index >= 0) {
+                    updated[index] = updated[index].copy(
+                        sets = updated[index].sets + section.sets
+                    )
+                } else {
+                    updated += DraftSection(
+                        key = nextKey++,
+                        type = section.type,
+                        sets = section.sets
+                    )
+                }
+            }
+            draft.copy(sections = updated)
+        }
+    }
+
     /** Меняет отдых после конкретного подхода. */
     fun changeRest(key: Long, setIndex: Int, delta: Int) {
         _draft.update { draft ->

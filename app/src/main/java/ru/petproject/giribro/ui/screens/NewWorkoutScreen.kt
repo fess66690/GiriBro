@@ -106,6 +106,7 @@ fun NewWorkoutScreen(
     val context = LocalContext.current
     var showDatePicker by remember { mutableStateOf(false) }
     var addSetFor by remember { mutableStateOf<Long?>(null) }
+    var quickInputOpen by rememberSaveable { mutableStateOf(false) }
     var timerOpen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(initialWorkout?.id, repeat) {
@@ -241,6 +242,10 @@ fun NewWorkoutScreen(
                     onRestChange = { index, delta -> vm.changeRest(section.key, index, delta) },
                     onRemoveSection = { vm.removeSection(section.key) }
                 )
+            }
+
+            item {
+                QuickInputCard(onOpen = { quickInputOpen = true })
             }
 
             item {
@@ -381,6 +386,17 @@ fun NewWorkoutScreen(
                 }
             )
         }
+    }
+
+    if (quickInputOpen) {
+        QuickInputDialog(
+            defaultWeight = defaultWeight,
+            onDismiss = { quickInputOpen = false },
+            onConfirm = { sections ->
+                vm.addSections(sections)
+                quickInputOpen = false
+            }
+        )
     }
 }
 

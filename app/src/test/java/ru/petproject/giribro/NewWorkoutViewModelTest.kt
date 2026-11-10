@@ -161,6 +161,28 @@ class NewWorkoutViewModelTest {
     }
 
     @Test
+    fun `quick input merges existing exercise and appends new one`() {
+        val vm = NewWorkoutViewModel()
+        vm.addSection(SectionType.JERK)
+        val key = vm.draft.value.sections.single().key
+        vm.addSet(key, SetEntry(16, 10))
+
+        vm.addSections(
+            listOf(
+                Section(SectionType.JERK, listOf(SetEntry(20, 5))),
+                Section(SectionType.SNATCH, listOf(SetEntry(16, 8)))
+            )
+        )
+
+        val sections = vm.draft.value.sections
+        assertEquals(2, sections.size)
+        assertEquals(SectionType.JERK, sections[0].type)
+        assertEquals(listOf(10, 5), sections[0].sets.map { it.reps })
+        assertEquals(SectionType.SNATCH, sections[1].type)
+        assertEquals(8, sections[1].sets.single().reps)
+    }
+
+    @Test
     fun `preparation time is clamped`() {
         val vm = NewWorkoutViewModel()
 
