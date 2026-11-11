@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Scale
@@ -39,6 +40,7 @@ import ru.petproject.giribro.timer.TimerService
 import ru.petproject.giribro.ui.screens.BodyScreen
 import ru.petproject.giribro.ui.screens.DiaryScreen
 import ru.petproject.giribro.ui.screens.NewWorkoutScreen
+import ru.petproject.giribro.ui.screens.NormsScreen
 import ru.petproject.giribro.ui.screens.SettingsScreen
 import ru.petproject.giribro.ui.screens.StatsScreen
 import ru.petproject.giribro.ui.screens.TimerScreen
@@ -53,6 +55,7 @@ private val bottomItems = listOf(
     BottomItem("diary", "Дневник", Icons.Outlined.FitnessCenter),
     BottomItem("stats", "Статистика", Icons.Outlined.Insights),
     BottomItem("body", "Замеры", Icons.Outlined.Scale),
+    BottomItem("norms", "Нормы", Icons.Outlined.EmojiEvents),
     BottomItem("timer", "Таймер", Icons.Outlined.Timer),
     BottomItem("settings", "Ещё", Icons.Outlined.Tune)
 )
@@ -133,6 +136,7 @@ fun AppRoot(vm: AppViewModel) {
                 }
                 composable("stats") { StatsScreen(vm) }
                 composable("body") { BodyScreen(vm) }
+                composable("norms") { NormsScreen(vm) }
                 composable("timer") {
                     TimerScreen(
                         onBack = {
