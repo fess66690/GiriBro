@@ -1,7 +1,17 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.kapt")
+}
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        FileInputStream(keystorePropertiesFile).use { load(it) }
+    }
 }
 
 android {
@@ -13,7 +23,27 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1-prototype"
+        versionName = "0.1.0"
+    }
+
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("release") {
+                val storePath = keystoreProperties.getProperty("storeFile")
+                val storePasswordValue = keystoreProperties.getProperty("storePassword")
+                val alias = keystoreProperties.getProperty("keyAlias")
+                val keyPasswordValue = keystoreProperties.getProperty("keyPassword")
+                require(!storePath.isNullOrBlank()) { "keystore.properties: storeFile is required" }
+                require(!storePasswordValue.isNullOrBlank()) { "keystore.properties: storePassword is required" }
+                require(!alias.isNullOrBlank()) { "keystore.properties: keyAlias is required" }
+                require(!keyPasswordValue.isNullOrBlank()) { "keystore.properties: keyPassword is required" }
+
+                storeFile = rootProject.file(storePath)
+                storePassword = storePasswordValue
+                keyAlias = alias
+                keyPassword = keyPasswordValue
+            }
+        }
     }
 
     buildTypes {
@@ -24,6 +54,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

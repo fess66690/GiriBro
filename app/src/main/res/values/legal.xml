@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fill these before publishing to RuStore. -->
+    <string name="legal_developer">[ИМЯ РАЗРАБОТЧИКА]</string>
+    <string name="legal_contact_email">[EMAIL]</string>
+    <string name="legal_privacy_url">[URL ПОЛИТИКИ]</string>
+</resources>

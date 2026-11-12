@@ -58,6 +58,7 @@ fun SettingsScreen(vm: AppViewModel) {
     val backupBusy by vm.backupBusy.collectAsStateWithLifecycle()
     val pendingImport by vm.pendingImport.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
+    var showPrivacyPolicy by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(DiaryBackupJson.MIME_TYPE)
@@ -204,24 +205,36 @@ fun SettingsScreen(vm: AppViewModel) {
         item {
             SettingsCard("О приложении") {
                 Text(
-                    "ГириБро · 0.1 · прототип",
+                    "ГириБро · 0.1.0",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "Гиревой дневник: тоннаж, подъёмы, серия, интервальный таймер, " +
-                        "вес и замеры тела, статистика. Данные хранятся локально на устройстве.",
+                        "вес и замеры тела, статистика, нормативы ЕВСК, календарь ВФГС " +
+                        "и фото-карточки тренировок. Данные хранятся локально на устройстве.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 HorizontalDivider(Modifier.padding(vertical = 12.dp))
                 Text(
-                    "Чего пока нет: облачной синхронизации, ленты товарищей, нормативов ЕВСК, " +
-                        "импорта из Polar/GPX и генератора программ. Это следующий этап.",
+                    "Чего пока нет: облачной синхронизации, ленты товарищей, импорта " +
+                        "из Polar/GPX и генератора программ. Это следующий этап.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        item {
+            SettingsCard("Документы") {
+                TextButton(
+                    onClick = { showPrivacyPolicy = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Политика конфиденциальности")
+                }
             }
         }
 
@@ -305,6 +318,10 @@ fun SettingsScreen(vm: AppViewModel) {
                 TextButton(onClick = { showClearDialog = false }) { Text("Отмена") }
             }
         )
+    }
+
+    if (showPrivacyPolicy) {
+        PrivacyPolicyDialog(onDismiss = { showPrivacyPolicy = false })
     }
 }
 
