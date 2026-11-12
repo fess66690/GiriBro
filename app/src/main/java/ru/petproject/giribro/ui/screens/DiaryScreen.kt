@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -89,6 +90,7 @@ fun DiaryScreen(
     val streak = computeStreak(workouts.map { it.date }, settings.weeklyGoal, today)
 
     var selected by remember { mutableStateOf<Workout?>(null) }
+    var cardWorkout by remember { mutableStateOf<Workout?>(null) }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -205,7 +207,18 @@ fun DiaryScreen(
             onRepeat = {
                 selected = null
                 onRepeatWorkout(workout)
+            },
+            onCard = {
+                selected = null
+                cardWorkout = workout
             }
+        )
+    }
+
+    cardWorkout?.let { workout ->
+        WorkoutCardDialog(
+            workout = workout,
+            onDismiss = { cardWorkout = null }
         )
     }
 }
@@ -365,7 +378,8 @@ private fun WorkoutDetailsDialog(
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
-    onRepeat: () -> Unit
+    onRepeat: () -> Unit,
+    onCard: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -436,6 +450,18 @@ private fun WorkoutDetailsDialog(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                OutlinedButton(
+                    onClick = onCard,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Outlined.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Карточка тренировки")
                 }
                 HorizontalDivider()
                 Row(
