@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -81,7 +82,10 @@ private val bodyShortMonth = DateTimeFormatter.ofPattern("MMM", Locale("ru"))
 private val bodyDateFormatter = DateTimeFormatter.ofPattern("d MMM yyyy", Locale("ru"))
 
 @Composable
-fun BodyScreen(vm: AppViewModel) {
+fun BodyScreen(
+    vm: AppViewModel,
+    onBack: (() -> Unit)? = null
+) {
     val measurements by vm.bodyMeasurements.collectAsStateWithLifecycle()
     val saving by vm.bodySaving.collectAsStateWithLifecycle()
     val today = remember { LocalDate.now() }
@@ -100,7 +104,7 @@ fun BodyScreen(vm: AppViewModel) {
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 110.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            item { BodyHeader(today) }
+            item { BodyHeader(today, onBack) }
 
             if (latest == null) {
                 item {
@@ -210,25 +214,42 @@ fun BodyScreen(vm: AppViewModel) {
 }
 
 @Composable
-private fun BodyHeader(today: LocalDate) {
+private fun BodyHeader(today: LocalDate, onBack: (() -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom
     ) {
-        Column {
-            Text(
-                text = "ТЕЛО",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 4.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Вес и замеры · ${today.ruDayMonth()}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (onBack != null) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.ArrowBack,
+                        contentDescription = "Назад"
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+            }
+            Column {
+                Text(
+                    text = "ТЕЛО",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 4.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Вес и замеры · ${today.ruDayMonth()}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         Box(
             Modifier

@@ -70,43 +70,34 @@ apksigner verify --verbose --print-certs app\build\outputs\apk\release\app-relea
 ## 4. Политика конфиденциальности
 
 Приложению нужна политика на русском языке, доступная по публичной ссылке и
-внутри приложения. Черновик: [privacy-policy.md](privacy-policy.md).
+внутри приложения. Документы: [privacy-policy.md](privacy-policy.md) и
+[privacy-policy.html](privacy-policy.html).
 
-Внутри приложения политика открывается в «Настройки» → «Документы» →
-«Политика конфиденциальности». Контакты и ссылка для этого экрана задаются в
-`app/src/main/res/values/legal.xml`.
+Внутри приложения политика открывается в «Профиль» → «Настройки» →
+«Документы» → «Политика конфиденциальности». Контакты и ссылка для этого экрана
+задаются в `app/src/main/res/values/legal.xml`.
 
-Перед публикацией замените:
+Заполненные данные:
 
-- `[ИМЯ РАЗРАБОТЧИКА]` — ФИО/ИП/название;
-- `[EMAIL]` — контакт поддержки;
-- `[URL ПОЛИТИКИ]` — публичная ссылка;
-- `[ДАТА]` — дата вступления в силу.
+- разработчик: Константинов Станислав Александрович;
+- e-mail поддержки: fess66690@gmail.com;
+- публичная ссылка:
+  https://fess66690.github.io/GiriBro/privacy-policy.html;
+- дата последнего обновления: 13 ноября 2026 г.
 
-Те же значения должны попасть в `app/src/main/res/values/legal.xml`,
-[privacy-policy.md](privacy-policy.md) и [rustore-listing.md](rustore-listing.md).
-Пока в этих файлах остаются значения в квадратных скобках, APK нельзя
-отправлять на модерацию.
+Публикация через GitHub Pages:
 
-Публичную ссылку можно получить, например, через GitHub Pages, сайт проекта
-или другой статический хостинг. Ссылка должна открываться без авторизации.
+1. Репозиторий: https://github.com/fess66690/GiriBro
+2. В GitHub откройте **Settings → Pages**.
+3. В разделе **Build and deployment** выберите **Deploy from a branch**.
+4. Укажите ветку `main` и каталог `/docs`, сохраните.
+5. После публикации проверьте
+   `https://fess66690.github.io/GiriBro/privacy-policy.html`.
+   Корневая страница `https://fess66690.github.io/GiriBro/` перенаправляет
+   на политику через `docs/index.html`.
 
-Для публикации подготовлен готовый HTML:
-[privacy-policy.html](privacy-policy.html). В нём остаются только
-`[ИМЯ РАЗРАБОТЧИКА]` и `[EMAIL]` — замените их перед выкладкой.
-
-Самые простые варианты:
-
-1. **GitHub Pages.** Загрузите файл `docs/privacy-policy.html` в репозиторий,
-   включите Pages для каталога `/docs`, откройте
-   `https://<аккаунт>.github.io/<репозиторий>/privacy-policy.html`.
-2. **Netlify Drop / Cloudflare Pages.** Перетащите папку с одним
-   `privacy-policy.html` в сервис и получите постоянный URL.
-3. **Telegraph.** Опубликуйте текст политики как страницу и используйте
-   `https://telegra.ph/...`; это быстро, но менее «официально», чем свой сайт.
-
-Не используйте ссылку на скачивание файла или архив: модерация ожидает
-открывающуюся веб-страницу.
+Ссылка должна открываться без авторизации. Не используйте ссылку на скачивание
+файла или архив: модерация ожидает открывающуюся веб-страницу.
 
 ## 5. Иконка и скриншоты
 
@@ -131,7 +122,8 @@ apksigner verify --verbose --print-certs app\build\outputs\apk\release\app-relea
 - `docs/rustore/screenshots/04-norms.png` — нормативы;
 - `docs/rustore/screenshots/05-calendar.png` — календарь ВФГС;
 - `docs/rustore/screenshots/06-timer.png` — настройка таймера;
-- `docs/rustore/screenshots/06-timer-running.png` — работающий таймер.
+- `docs/rustore/screenshots/07-timer-running.png` — работающий таймер;
+- `docs/rustore/screenshots/08-profile.png` — вкладка «Профиль».
 
 Для карточки RuStore достаточно 3–6 скриншотов. Рекомендуемый порядок:
 дневник, фото-карточка, статистика, нормативы, календарь, таймер.

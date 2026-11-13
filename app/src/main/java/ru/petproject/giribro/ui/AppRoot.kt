@@ -4,12 +4,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material.icons.outlined.Insights
-import androidx.compose.material.icons.outlined.Scale
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -41,6 +39,7 @@ import ru.petproject.giribro.ui.screens.BodyScreen
 import ru.petproject.giribro.ui.screens.DiaryScreen
 import ru.petproject.giribro.ui.screens.NewWorkoutScreen
 import ru.petproject.giribro.ui.screens.NormsScreen
+import ru.petproject.giribro.ui.screens.ProfileScreen
 import ru.petproject.giribro.ui.screens.SettingsScreen
 import ru.petproject.giribro.ui.screens.StatsScreen
 import ru.petproject.giribro.ui.screens.TimerScreen
@@ -54,11 +53,11 @@ private data class BottomItem(
 private val bottomItems = listOf(
     BottomItem("diary", "Дневник", Icons.Outlined.FitnessCenter),
     BottomItem("stats", "Статистика", Icons.Outlined.Insights),
-    BottomItem("body", "Замеры", Icons.Outlined.Scale),
-    BottomItem("norms", "Нормы", Icons.Outlined.EmojiEvents),
     BottomItem("timer", "Таймер", Icons.Outlined.Timer),
-    BottomItem("settings", "Ещё", Icons.Outlined.Tune)
+    BottomItem("profile", "Профиль", Icons.Outlined.Person)
 )
+
+private val profileRoutes = setOf("profile", "body", "norms", "settings")
 
 @Composable
 fun AppRoot(vm: AppViewModel) {
@@ -91,9 +90,13 @@ fun AppRoot(vm: AppViewModel) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     bottomItems.forEach { item ->
                         NavigationBarItem(
-                            selected = route == item.route,
+                            selected = if (item.route == "profile") {
+                                baseRoute in profileRoutes
+                            } else {
+                                baseRoute == item.route
+                            },
                             onClick = {
-                                if (route != item.route) {
+                                if (baseRoute != item.route) {
                                     navController.navigate(item.route) {
                                         popUpTo(navController.graph.findStartDestination().id) {
                                             saveState = true
@@ -135,8 +138,36 @@ fun AppRoot(vm: AppViewModel) {
                     )
                 }
                 composable("stats") { StatsScreen(vm) }
-                composable("body") { BodyScreen(vm) }
-                composable("norms") { NormsScreen(vm) }
+                composable("profile") {
+                    ProfileScreen(
+                        vm = vm,
+                        onOpenBody = { navController.navigate("body") },
+                        onOpenNorms = { navController.navigate("norms?tab=norms") },
+                        onOpenCalendar = { navController.navigate("norms?tab=calendar") },
+                        onOpenSettings = { navController.navigate("settings") }
+                    )
+                }
+                composable("body") {
+                    BodyScreen(
+                        vm = vm,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = "norms?tab={tab}",
+                    arguments = listOf(
+                        navArgument("tab") {
+                            type = NavType.StringType
+                            defaultValue = "norms"
+                        }
+                    )
+                ) { entry ->
+                    NormsScreen(
+                        vm = vm,
+                        initialTab = entry.arguments?.getString("tab") ?: "norms",
+                        onBack = { navController.popBackStack() }
+                    )
+                }
                 composable("timer") {
                     TimerScreen(
                         onBack = {
@@ -146,7 +177,12 @@ fun AppRoot(vm: AppViewModel) {
                         }
                     )
                 }
-                composable("settings") { SettingsScreen(vm) }
+                composable("settings") {
+                    SettingsScreen(
+                        vm = vm,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
                 composable(
                     route = "new?workoutId={workoutId}&repeat={repeat}",
                     arguments = listOf(

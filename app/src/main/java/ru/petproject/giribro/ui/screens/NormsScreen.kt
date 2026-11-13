@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Scale
@@ -88,13 +89,17 @@ private const val CALENDAR_TAB = "calendar"
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun NormsScreen(vm: AppViewModel) {
+fun NormsScreen(
+    vm: AppViewModel,
+    initialTab: String = NORMS_TAB,
+    onBack: (() -> Unit)? = null
+) {
     val measurements by vm.bodyMeasurements.collectAsStateWithLifecycle()
     val latestWeight = remember(measurements) {
         measurements.maxByOrNull { it.date }?.weightKg
     }
 
-    var tab by rememberSaveable { mutableStateOf(NORMS_TAB) }
+    var tab by rememberSaveable(initialTab) { mutableStateOf(initialTab) }
     var periodId by rememberSaveable { mutableStateOf(NormBook.periods.first().id) }
     var disciplineName by rememberSaveable {
         mutableStateOf(NormDiscipline.JERK.name)
@@ -117,11 +122,13 @@ fun NormsScreen(vm: AppViewModel) {
     when (tab) {
         CALENDAR_TAB -> CalendarContent(
             tab = tab,
-            onTabChange = { tab = it }
+            onTabChange = { tab = it },
+            onBack = onBack
         )
         else -> NormsContent(
             tab = tab,
             onTabChange = { tab = it },
+            onBack = onBack,
             period = period,
             discipline = discipline,
             gender = gender,
@@ -135,7 +142,7 @@ fun NormsScreen(vm: AppViewModel) {
                 periodId = newPeriod.id
                 disciplineName = newPeriod.disciplines.first().discipline.name
             },
-            onDisciplineChange = { disciplineName = it.name },
+            onDisciplineChange = { disciplineName = it.discipline.name },
             onGenderChange = { genderName = it.name },
             onWeightChange = { weightText = it },
             onUseLatestWeight = {
@@ -146,9 +153,27 @@ fun NormsScreen(vm: AppViewModel) {
 }
 
 @Composable
-private fun NormsHeader(tab: String, onTabChange: (String) -> Unit) {
+private fun NormsHeader(
+    tab: String,
+    onTabChange: (String) -> Unit,
+    onBack: (() -> Unit)? = null
+) {
     Column(Modifier.fillMaxWidth()) {
-        Text("Нормы", style = MaterialTheme.typography.headlineMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.ArrowBack,
+                        contentDescription = "Назад"
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+            }
+            Text("Нормы", style = MaterialTheme.typography.headlineMedium)
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             "Разрядные нормативы ЕВСК и календарь ВФГС",
@@ -176,6 +201,7 @@ private fun NormsHeader(tab: String, onTabChange: (String) -> Unit) {
 private fun NormsContent(
     tab: String,
     onTabChange: (String) -> Unit,
+    onBack: (() -> Unit)?,
     period: NormPeriodData,
     discipline: NormDisciplineData,
     gender: NormGender,
@@ -197,7 +223,7 @@ private fun NormsContent(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            NormsHeader(tab = tab, onTabChange = onTabChange)
+            NormsHeader(tab = tab, onTabChange = onTabChange, onBack = onBack)
         }
 
         item {
@@ -699,7 +725,8 @@ private fun normTierColor(tier: NormTier): Color {
 @Composable
 private fun CalendarContent(
     tab: String,
-    onTabChange: (String) -> Unit
+    onTabChange: (String) -> Unit,
+    onBack: (() -> Unit)? = null
 ) {
     val today = LocalDate.now()
     var upcomingOnly by rememberSaveable {
@@ -718,7 +745,7 @@ private fun CalendarContent(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            NormsHeader(tab = tab, onTabChange = onTabChange)
+            NormsHeader(tab = tab, onTabChange = onTabChange, onBack = onBack)
         }
 
         item {

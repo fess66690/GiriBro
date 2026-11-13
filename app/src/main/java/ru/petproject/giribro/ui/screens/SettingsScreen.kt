@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -53,7 +54,10 @@ import java.time.ZoneId
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(vm: AppViewModel) {
+fun SettingsScreen(
+    vm: AppViewModel,
+    onBack: (() -> Unit)? = null
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val backupBusy by vm.backupBusy.collectAsStateWithLifecycle()
     val pendingImport by vm.pendingImport.collectAsStateWithLifecycle()
@@ -77,7 +81,21 @@ fun SettingsScreen(vm: AppViewModel) {
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text("Настройки", style = MaterialTheme.typography.headlineMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onBack != null) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = "Назад"
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text("Настройки", style = MaterialTheme.typography.headlineMedium)
+            }
         }
 
         item {
