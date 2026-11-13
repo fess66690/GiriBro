@@ -33,7 +33,7 @@ fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
                     .heightIn(max = 460.dp)
             ) {
                 Text(
-                    "Дата последнего обновления: 12 ноября 2026 г.",
+                    "Дата последнего обновления: 13 ноября 2026 г.",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
