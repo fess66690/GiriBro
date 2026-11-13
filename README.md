@@ -158,6 +158,9 @@ Windows), остановите Gradle, удалите каталог и повт
 
 Публикация в RuStore: [docs/rustore.md](docs/rustore.md).
 
+Политика конфиденциальности: [docs/privacy-policy.md](docs/privacy-policy.md)
+и готовый для хостинга [docs/privacy-policy.html](docs/privacy-policy.html).
+
 Тесты расчётов и логики (109 JVM-тестов, без эмулятора):
 
 ```powershell
