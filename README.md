@@ -160,6 +160,10 @@ apksigner verify --verbose --print-certs app\build\outputs\apk\release\app-relea
 `app\build\intermediates\dex\release\minifyReleaseWithR8\classes.dex` (бывает на
 Windows), остановите Gradle, удалите каталог и повторите сборку с `--no-parallel`.
 
+Демо-тренировки и замеры добавляются только в debug-сборке (`BuildConfig.DEBUG`).
+Release-версия при первом запуске показывает пустой дневник: у пользователя нет
+чужой статистики.
+
 Публикация в RuStore: [docs/rustore.md](docs/rustore.md).
 
 Политика конфиденциальности: [docs/privacy-policy.md](docs/privacy-policy.md)
@@ -193,7 +197,7 @@ Room-база теперь версии 2. Миграция 1→2 создаёт
 ```
 app/src/main/java/ru/petproject/giribro/
 ├─ MainActivity.kt          вход, тема, edge-to-edge
-├─ GiriBroApp.kt            Application, DI-контейнер, демо-данные
+├─ GiriBroApp.kt            Application, DI-контейнер, демо-данные в debug
 ├─ AppViewModel.kt          состояние экранов и операции с дневником
 ├─ data/
 │  ├─ Models.kt             SectionType, Section, SetEntry, Workout, форматирование
@@ -213,7 +217,7 @@ app/src/main/java/ru/petproject/giribro/
 │  ├─ WorkoutCardContent.kt данные и форматирование фото-карточки
 │  ├─ WorkoutValidator.kt   проверка веса, повторов, времени и отдыха
 │  ├─ SettingsRepository.kt SharedPreferences + StateFlow
-│  └─ DemoData.kt           стартовые тренировки и замеры
+│  └─ DemoData.kt           демо-тренировки и замеры для debug-сборок
 ├─ timer/
 │  ├─ TimerState.kt         конфиг, состояние, ручные подходы
 │  ├─ TimerPlan.kt          фазы, план из тренировки, отдых после каждого подхода

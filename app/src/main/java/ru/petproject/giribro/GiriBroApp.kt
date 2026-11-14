@@ -28,7 +28,11 @@ class GiriBroApp : Application() {
         super.onCreate()
         runCatching { TimerNotifications.ensureChannel(this) }
             .onFailure { Log.e(TAG, "Не удалось создать канал уведомлений", it) }
-        seedDemoIfNeeded()
+        // Демо-данные нужны только для разработки и скриншотов.
+        // В release пользователь начинает с пустого дневника.
+        if (BuildConfig.DEBUG) {
+            seedDemoIfNeeded()
+        }
     }
 
     private fun seedDemoIfNeeded() {
