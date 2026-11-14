@@ -166,6 +166,9 @@ Release-версия при первом запуске показывает п�
 
 Публикация в RuStore: [docs/rustore.md](docs/rustore.md).
 
+Планы развития после `0.1.0`: [docs/platform-design.md](docs/platform-design.md) —
+аккаунты, синхронизация и работа тренера со спортсменами.
+
 Политика конфиденциальности: [docs/privacy-policy.md](docs/privacy-policy.md)
 и готовый для хостинга [docs/privacy-policy.html](docs/privacy-policy.html).
 
