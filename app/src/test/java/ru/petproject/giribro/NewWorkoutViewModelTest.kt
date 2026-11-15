@@ -96,6 +96,47 @@ class NewWorkoutViewModelTest {
     }
 
     @Test
+    fun `snapshot and restore keep the editing identity`() {
+        val vm = NewWorkoutViewModel()
+        vm.load(source)
+        vm.setNote("изменённый черновик")
+        vm.setPrep(30)
+
+        val snapshot = vm.snapshot()
+        assertNotNull(snapshot)
+        assertEquals(42L, snapshot?.editingId)
+        assertEquals(123L, snapshot?.editingCreatedAt)
+
+        val restored = NewWorkoutViewModel()
+        restored.restore(requireNotNull(snapshot))
+
+        val workout = restored.toWorkout()
+        assertEquals(42L, workout.id)
+        assertEquals(123L, workout.createdAt)
+        assertEquals("изменённый черновик", workout.note)
+        assertEquals(30, restored.draft.value.prepSec)
+        assertEquals(source.sections.single().sets, workout.sections.single().sets)
+    }
+
+    @Test
+    fun `empty new workout has no snapshot`() {
+        assertNull(NewWorkoutViewModel().snapshot())
+    }
+
+    @Test
+    fun `snapshot drops empty exercise sections`() {
+        val vm = NewWorkoutViewModel()
+        vm.addSection(SectionType.WARMUP)
+        vm.addSection(SectionType.JERK)
+        val jerkKey = vm.draft.value.sections.last().key
+        vm.addSet(jerkKey, SetEntry(24, 20, 120))
+
+        val snapshot = requireNotNull(vm.snapshot())
+        assertEquals(1, snapshot.sections.size)
+        assertEquals(SectionType.JERK, snapshot.sections.single().type)
+    }
+
+    @Test
     fun `new workout starts without id`() {
         val vm = NewWorkoutViewModel()
         assertTrue(vm.toWorkout().id == 0L)

@@ -6,10 +6,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import ru.petproject.giribro.backup.BackupNotifications
+import ru.petproject.giribro.backup.BackupScheduler
+import ru.petproject.giribro.backup.BackupService
 import ru.petproject.giribro.data.AppDatabase
+import ru.petproject.giribro.data.BackupRepository
 import ru.petproject.giribro.data.BodyMeasurementRepository
 import ru.petproject.giribro.data.DemoData
 import ru.petproject.giribro.data.SettingsRepository
+import ru.petproject.giribro.data.WorkoutDraftStore
 import ru.petproject.giribro.data.WorkoutRepository
 import ru.petproject.giribro.timer.TimerNotifications
 
@@ -21,6 +26,11 @@ class GiriBroApp : Application() {
         BodyMeasurementRepository(database.bodyMeasurementDao())
     }
     val settings: SettingsRepository by lazy { SettingsRepository(this) }
+    val backups: BackupRepository by lazy { BackupRepository(this) }
+    val drafts: WorkoutDraftStore by lazy { WorkoutDraftStore(this) }
+    val backupService: BackupService by lazy {
+        BackupService(this, workouts, bodyMeasurements, settings, backups)
+    }
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -28,10 +38,18 @@ class GiriBroApp : Application() {
         super.onCreate()
         runCatching { TimerNotifications.ensureChannel(this) }
             .onFailure { Log.e(TAG, "Не удалось создать канал уведомлений", it) }
+        runCatching { BackupNotifications.ensureChannel(this) }
+            .onFailure { Log.e(TAG, "Не удалось создать канал резервных копий", it) }
+        runCatching { BackupScheduler.schedule(this) }
+            .onFailure { Log.e(TAG, "Не удалось запланировать автокопию", it) }
         // Демо-данные нужны только для разработки и скриншотов.
         // В release пользователь начинает с пустого дневника.
         if (BuildConfig.DEBUG) {
             seedDemoIfNeeded()
+        }
+        appScope.launch {
+            runCatching { backupService.autoBackup(force = false) }
+                .onFailure { Log.e(TAG, "Не удалось проверить автокопию", it) }
         }
     }
 

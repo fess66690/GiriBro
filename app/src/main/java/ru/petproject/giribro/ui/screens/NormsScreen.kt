@@ -39,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +64,7 @@ import ru.petproject.giribro.data.CompetitionKind
 import ru.petproject.giribro.data.NormBook
 import ru.petproject.giribro.data.NormCategory
 import ru.petproject.giribro.data.NormDiscipline
+import ru.petproject.giribro.data.NormAgeGroup
 import ru.petproject.giribro.data.NormDisciplineData
 import ru.petproject.giribro.data.NormGender
 import ru.petproject.giribro.data.NormGenderData
@@ -95,6 +97,7 @@ fun NormsScreen(
     onBack: (() -> Unit)? = null
 ) {
     val measurements by vm.bodyMeasurements.collectAsStateWithLifecycle()
+    val profile by vm.profile.collectAsStateWithLifecycle()
     val latestWeight = remember(measurements) {
         measurements.maxByOrNull { it.date }?.weightKg
     }
@@ -104,20 +107,31 @@ fun NormsScreen(
     var disciplineName by rememberSaveable {
         mutableStateOf(NormDiscipline.JERK.name)
     }
-    var genderName by rememberSaveable {
-        mutableStateOf(NormGender.MALE.name)
+    var genderName by rememberSaveable { mutableStateOf(profile.gender.name) }
+    var ageGroupName by rememberSaveable { mutableStateOf(profile.ageGroup.name) }
+    var weightText by rememberSaveable {
+        mutableStateOf(profile.weightKg?.asBodyNumber() ?: "")
     }
-    var weightText by rememberSaveable { mutableStateOf("") }
+    var weightInitialized by rememberSaveable { mutableStateOf(profile.weightKg != null) }
+
+    LaunchedEffect(latestWeight) {
+        if (!weightInitialized && weightText.isBlank() && latestWeight != null) {
+            weightText = latestWeight.asBodyNumber()
+            weightInitialized = true
+        }
+    }
 
     val period = NormBook.period(periodId)
     val discipline = period.disciplines.firstOrNull {
         it.discipline.name == disciplineName
     } ?: period.disciplines.first()
     val gender = NormGender.entries.firstOrNull { it.name == genderName } ?: NormGender.MALE
+    val ageGroup = NormAgeGroup.entries.firstOrNull { it.name == ageGroupName }
+        ?: NormAgeGroup.ADULT
     val genderData = discipline.gender(gender)
     val weight = NormBook.parseWeight(weightText)
     val category = weight?.let { NormBook.weightCategory(it, genderData) }
-    val showYouth = period.hasYouth && genderData.hasYouthValues
+    val showYouth = ageGroup.showsYouth && period.hasYouth && genderData.hasYouthValues
 
     when (tab) {
         CALENDAR_TAB -> CalendarContent(
@@ -132,6 +146,7 @@ fun NormsScreen(
             period = period,
             discipline = discipline,
             gender = gender,
+            ageGroup = ageGroup,
             genderData = genderData,
             showYouth = showYouth,
             weightText = weightText,
@@ -143,7 +158,14 @@ fun NormsScreen(
                 disciplineName = newPeriod.disciplines.first().discipline.name
             },
             onDisciplineChange = { disciplineName = it.discipline.name },
-            onGenderChange = { genderName = it.name },
+            onGenderChange = {
+                genderName = it.name
+                vm.setAthleteGender(it)
+            },
+            onAgeGroupChange = {
+                ageGroupName = it.name
+                vm.setAthleteAgeGroup(it)
+            },
             onWeightChange = { weightText = it },
             onUseLatestWeight = {
                 latestWeight?.let { weightText = it.asBodyNumber() }
@@ -205,6 +227,7 @@ private fun NormsContent(
     period: NormPeriodData,
     discipline: NormDisciplineData,
     gender: NormGender,
+    ageGroup: NormAgeGroup,
     genderData: NormGenderData,
     showYouth: Boolean,
     weightText: String,
@@ -214,6 +237,7 @@ private fun NormsContent(
     onPeriodChange: (NormPeriodData) -> Unit,
     onDisciplineChange: (NormDisciplineData) -> Unit,
     onGenderChange: (NormGender) -> Unit,
+    onAgeGroupChange: (NormAgeGroup) -> Unit,
     onWeightChange: (String) -> Unit,
     onUseLatestWeight: () -> Unit
 ) {
@@ -231,12 +255,14 @@ private fun NormsContent(
                 period = period,
                 discipline = discipline,
                 gender = gender,
+                ageGroup = ageGroup,
                 weightText = weightText,
                 weight = weight,
                 latestWeight = latestWeight,
                 onPeriodChange = onPeriodChange,
                 onDisciplineChange = onDisciplineChange,
                 onGenderChange = onGenderChange,
+                onAgeGroupChange = onAgeGroupChange,
                 onWeightChange = onWeightChange,
                 onUseLatestWeight = onUseLatestWeight
             )
@@ -278,12 +304,14 @@ private fun NormsControls(
     period: NormPeriodData,
     discipline: NormDisciplineData,
     gender: NormGender,
+    ageGroup: NormAgeGroup,
     weightText: String,
     weight: Double?,
     latestWeight: Double?,
     onPeriodChange: (NormPeriodData) -> Unit,
     onDisciplineChange: (NormDisciplineData) -> Unit,
     onGenderChange: (NormGender) -> Unit,
+    onAgeGroupChange: (NormAgeGroup) -> Unit,
     onWeightChange: (String) -> Unit,
     onUseLatestWeight: () -> Unit
 ) {
@@ -320,6 +348,22 @@ private fun NormsControls(
                     FilterChip(
                         selected = option == gender,
                         onClick = { onGenderChange(option) },
+                        label = { Text(option.label) }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            SectionTitle("Возрастная группа")
+            Spacer(Modifier.height(6.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                NormAgeGroup.entries.forEach { option ->
+                    FilterChip(
+                        selected = option == ageGroup,
+                        onClick = { onAgeGroupChange(option) },
                         label = { Text(option.label) }
                     )
                 }

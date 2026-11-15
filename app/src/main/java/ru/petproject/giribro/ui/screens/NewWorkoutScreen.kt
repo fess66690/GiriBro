@@ -71,6 +71,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.petproject.giribro.data.SectionType
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.Workout
+import ru.petproject.giribro.data.WorkoutDraft
+import ru.petproject.giribro.data.WorkoutDraftStore
 import ru.petproject.giribro.data.asDuration
 import ru.petproject.giribro.data.asTonnage
 import ru.petproject.giribro.timer.TimerPhase
@@ -96,21 +98,63 @@ fun NewWorkoutScreen(
     defaultWeight: Int,
     initialWorkout: Workout? = null,
     repeat: Boolean = false,
+    restoreDraft: Boolean = true,
     saving: Boolean = false,
-    onSave: (Workout) -> Unit,
+    onSave: (Workout, () -> Unit) -> Unit,
     onClose: () -> Unit,
     vm: NewWorkoutViewModel = viewModel()
 ) {
     val draft by vm.draft.collectAsStateWithLifecycle()
     val timerState by TimerService.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val draftStore = remember(context.applicationContext) {
+        WorkoutDraftStore(context.applicationContext)
+    }
     var showDatePicker by remember { mutableStateOf(false) }
     var addSetFor by remember { mutableStateOf<Long?>(null) }
     var quickInputOpen by rememberSaveable { mutableStateOf(false) }
     var timerOpen by rememberSaveable { mutableStateOf(false) }
+    var draftReady by rememberSaveable { mutableStateOf(!restoreDraft) }
+    // Не сохраняем этот флаг в instance state: после смерти процесса он должен
+    // снова прочитать черновик, а после поворота экрана — нет.
+    var draftChecked by remember { mutableStateOf(false) }
+    var pendingDraft by remember { mutableStateOf<WorkoutDraft?>(null) }
 
     LaunchedEffect(initialWorkout?.id, repeat) {
         if (initialWorkout != null) vm.load(initialWorkout, repeat)
+    }
+
+    LaunchedEffect(restoreDraft) {
+        if (!restoreDraft) {
+            draftReady = true
+        } else if (vm.snapshot() != null) {
+            // ViewModel пережил поворот экрана: предлагать черновик снова не нужно.
+            draftReady = true
+        } else {
+            val saved = draftStore.load()?.takeIf { it.hasContent }
+            if (saved == null) {
+                draftReady = true
+            } else {
+                draftReady = false
+                pendingDraft = saved
+            }
+        }
+        draftChecked = true
+    }
+
+    // Автосохранение нового черновика. Для редактирования исходник уже есть
+    // в дневнике, поэтому второй черновик не нужен.
+    LaunchedEffect(draft, draftReady, draftChecked) {
+        if (!restoreDraft || !draftReady || !draftChecked) return@LaunchedEffect
+        val snapshot = vm.snapshot()
+        if (snapshot == null) draftStore.clear() else draftStore.save(snapshot)
+    }
+
+    fun saveWorkout() {
+        if (!draft.isValid || saving) return
+        onSave(vm.toWorkout()) {
+            if (restoreDraft) draftStore.clear()
+        }
     }
 
     val plan = remember(draft.sections, draft.prepSec) {
@@ -165,7 +209,7 @@ fun NewWorkoutScreen(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    onClick = { onSave(vm.toWorkout()) },
+                    onClick = { saveWorkout() },
                     enabled = draft.isValid && !saving
                 ) {
                     Text(if (saving) "Сохраняем…" else "Сохранить")
@@ -305,7 +349,7 @@ fun NewWorkoutScreen(
                     }
                 }
                 Button(
-                    onClick = { onSave(vm.toWorkout()) },
+                    onClick = { saveWorkout() },
                     enabled = draft.isValid && !saving
                 ) {
                     Text(if (saving) "Сохраняем…" else "В дневник")
@@ -371,6 +415,52 @@ fun NewWorkoutScreen(
         ) {
             DatePicker(state = pickerState)
         }
+    }
+
+    pendingDraft?.let { saved ->
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Продолжить черновик?") },
+            text = {
+                Text(
+                    buildString {
+                        append("Черновик от ")
+                        append(saved.date.ruDayMonth())
+                        append(": ${saved.sections.size} ")
+                        append(
+                            pluralRu(
+                                saved.sections.size,
+                                "упражнение",
+                                "упражнения",
+                                "упражнений"
+                            )
+                        )
+                        append(", ${saved.reps} ")
+                        append(pluralRu(saved.reps, "подъём", "подъёма", "подъёмов"))
+                        append(". Продолжить с этого места?")
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.restore(saved)
+                        pendingDraft = null
+                        draftReady = true
+                    }
+                ) { Text("Продолжить") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        draftStore.clear()
+                        vm.reset()
+                        pendingDraft = null
+                        draftReady = true
+                    }
+                ) { Text("Начать заново") }
+            }
+        )
     }
 
     addSetFor?.let { key ->

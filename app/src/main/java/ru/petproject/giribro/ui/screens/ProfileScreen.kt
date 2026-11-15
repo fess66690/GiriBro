@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.petproject.giribro.AppViewModel
+import ru.petproject.giribro.BuildConfig
 import ru.petproject.giribro.data.CompetitionCalendar
 import ru.petproject.giribro.data.asBodyWeight
 import ru.petproject.giribro.ui.components.SectionTitle
@@ -201,7 +202,7 @@ private fun ProfileOverview(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        "Версия 0.1.0 · данные только на устройстве",
+                        "Версия ${BuildConfig.VERSION_NAME} · данные только на устройстве",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

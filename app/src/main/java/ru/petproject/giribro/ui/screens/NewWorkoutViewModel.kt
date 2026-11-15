@@ -9,6 +9,7 @@ import ru.petproject.giribro.data.Section
 import ru.petproject.giribro.data.SectionType
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.Workout
+import ru.petproject.giribro.data.WorkoutDraft
 import ru.petproject.giribro.data.WorkoutValidator
 import java.time.LocalDate
 
@@ -84,6 +85,49 @@ class NewWorkoutViewModel : ViewModel() {
                 )
             }
         )
+    }
+
+    /** Снимок для автосохранения; null — сохранять нечего. */
+    fun snapshot(): WorkoutDraft? {
+        val draft = _draft.value
+        val sections = draft.sections.mapNotNull { section ->
+            section.sets.takeIf { it.isNotEmpty() }?.let { Section(section.type, it) }
+        }
+        if (sections.isEmpty() && draft.note.isBlank()) return null
+        return WorkoutDraft(
+            date = draft.date,
+            note = draft.note,
+            sections = sections,
+            prepSec = draft.prepSec,
+            editingId = editingId,
+            editingCreatedAt = editingCreatedAt
+        )
+    }
+
+    /** Восстанавливает черновик, включая режим редактирования. */
+    fun restore(saved: WorkoutDraft) {
+        nextKey = 0L
+        editingId = saved.editingId
+        editingCreatedAt = saved.editingCreatedAt
+        _draft.value = Draft(
+            date = saved.date,
+            note = saved.note,
+            sections = saved.sections.map { section ->
+                DraftSection(
+                    key = nextKey++,
+                    type = section.type,
+                    sets = section.sets
+                )
+            },
+            prepSec = saved.prepSec.coerceIn(0, MAX_PREP_SEC)
+        )
+    }
+
+    fun reset() {
+        nextKey = 0L
+        editingId = null
+        editingCreatedAt = null
+        _draft.value = Draft()
     }
 
     fun addSection(type: SectionType) {

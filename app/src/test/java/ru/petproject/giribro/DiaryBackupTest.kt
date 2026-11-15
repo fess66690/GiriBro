@@ -7,9 +7,13 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import ru.petproject.giribro.data.AthleteProfile
 import ru.petproject.giribro.data.BackupFormatException
+import ru.petproject.giribro.data.BackupPasswordException
 import ru.petproject.giribro.data.BodyMeasurement
 import ru.petproject.giribro.data.DiaryBackupJson
+import ru.petproject.giribro.data.NormAgeGroup
+import ru.petproject.giribro.data.NormGender
 import ru.petproject.giribro.data.Section
 import ru.petproject.giribro.data.SectionType
 import ru.petproject.giribro.data.SetEntry
@@ -121,6 +125,81 @@ class DiaryBackupTest {
 
         assertEquals(1, backup.workouts.size)
         assertTrue(backup.bodyMeasurements.isEmpty())
+    }
+
+    @Test
+    fun `version 2 backup without profile is accepted`() {
+        val root = JSONObject(DiaryBackupJson.encode(listOf(workout()), settings))
+            .put("version", 2)
+        root.remove("profile")
+
+        val backup = DiaryBackupJson.decode(root.toString())
+
+        assertEquals(1, backup.workouts.size)
+        assertNull(backup.profile)
+    }
+
+    @Test
+    fun `athlete profile survives encode and decode`() {
+        val profile = AthleteProfile(
+            gender = NormGender.FEMALE,
+            ageGroup = NormAgeGroup.YOUTH,
+            weightKg = 61.5
+        )
+
+        val backup = DiaryBackupJson.decode(
+            DiaryBackupJson.encode(
+                workouts = emptyList(),
+                settings = settings,
+                profile = profile
+            )
+        )
+
+        assertEquals(profile, backup.profile)
+    }
+
+    @Test
+    fun `encrypted backup round trip hides content and needs the password`() {
+        val profile = AthleteProfile(
+            gender = NormGender.MALE,
+            ageGroup = NormAgeGroup.ADULT,
+            weightKg = 82.0
+        )
+        val encoded = DiaryBackupJson.encode(
+            workouts = listOf(workout()),
+            settings = settings,
+            bodyMeasurements = listOf(
+                BodyMeasurement(date = date, weightKg = 82.5, createdAt = 789L)
+            ),
+            profile = profile,
+            password = "kettlebell-2026"
+        )
+
+        assertTrue(DiaryBackupJson.isEncrypted(encoded))
+        assertTrue(!encoded.contains("Тяжёлая тренировка"))
+        assertTrue(!encoded.contains("bodyMeasurements"))
+
+        val backup = DiaryBackupJson.decode(encoded, "kettlebell-2026")
+        assertEquals(1, backup.workouts.size)
+        assertEquals(settings, backup.settings)
+        assertEquals(profile, backup.profile)
+        assertEquals(82.5, backup.bodyMeasurements.single().weightKg, 0.001)
+    }
+
+    @Test
+    fun `wrong password is reported separately from broken files`() {
+        val encoded = DiaryBackupJson.encode(
+            workouts = emptyList(),
+            settings = settings,
+            password = "right-password"
+        )
+
+        assertThrows(BackupPasswordException::class.java) {
+            DiaryBackupJson.decode(encoded, "wrong-password")
+        }
+        assertThrows(BackupFormatException::class.java) {
+            DiaryBackupJson.decode(encoded)
+        }
     }
 
     @Test

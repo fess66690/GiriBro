@@ -17,11 +17,17 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ru.petproject.giribro.backup.BackupOutcome
+import ru.petproject.giribro.data.AthleteProfile
 import ru.petproject.giribro.data.BackupFormatException
+import ru.petproject.giribro.data.BackupPasswordException
+import ru.petproject.giribro.data.BackupState
 import ru.petproject.giribro.data.BodyMeasurement
 import ru.petproject.giribro.data.BodyMeasurementValidator
 import ru.petproject.giribro.data.DiaryBackup
 import ru.petproject.giribro.data.DiaryBackupJson
+import ru.petproject.giribro.data.NormAgeGroup
+import ru.petproject.giribro.data.NormGender
 import ru.petproject.giribro.data.Settings
 import ru.petproject.giribro.data.StatsPeriod
 import ru.petproject.giribro.data.ThemeMode
@@ -56,6 +62,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _pendingImport = MutableStateFlow<DiaryBackup?>(null)
     val pendingImport: StateFlow<DiaryBackup?> = _pendingImport.asStateFlow()
 
+    private val _backupPasswordRequired = MutableStateFlow(false)
+    val backupPasswordRequired: StateFlow<Boolean> = _backupPasswordRequired.asStateFlow()
+
+    private val _backupPasswordError = MutableStateFlow<String?>(null)
+    val backupPasswordError: StateFlow<String?> = _backupPasswordError.asStateFlow()
+
+    private var pendingEncryptedBackup: String? = null
+
     val workouts: StateFlow<List<Workout>> = app.workouts.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -63,6 +77,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val settings: StateFlow<Settings> = app.settings.state
+
+    val profile: StateFlow<AthleteProfile> = app.settings.profile
+
+    val backupState: StateFlow<BackupState> = app.backups.state
 
     /**
      * Сохраняет тренировку и только после успешной записи вызывает [onSaved].
@@ -166,6 +184,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
+            app.drafts.clear()
             runCatching { app.settings.demoSeeded = true }
                 .onFailure { Log.e(TAG, "Не удалось сохранить флаг демо-данных", it) }
             showMessage("Дневник и замеры очищены")
@@ -178,37 +197,55 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _backupBusy.value = true
         viewModelScope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    val text = DiaryBackupJson.encode(
-                        workouts = app.workouts.all(),
-                        bodyMeasurements = app.bodyMeasurements.all(),
-                        settings = app.settings.state.value
+                val state = app.backups.state.value
+                val password = if (state.passwordEnabled) {
+                    withContext(Dispatchers.IO) { app.backups.readPassword() }
+                } else {
+                    null
+                }
+                if (state.passwordEnabled && password == null) {
+                    showMessage(
+                        "Не удалось прочитать пароль копии. Задайте его заново в настройках.",
+                        isError = true
                     )
-                    writeBackupText(uri, text)
+                    return@launch
+                }
+
+                when (val outcome = app.backupService.manualBackup(uri, password)) {
+                    is BackupOutcome.Saved -> showMessage(
+                        if (password != null) "Зашифрованная копия сохранена"
+                        else "Резервная копия сохранена"
+                    )
+                    is BackupOutcome.Failed -> showMessage(outcome.message, isError = true)
+                    else -> showMessage("Не удалось сохранить резервную копию.", isError = true)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Не удалось сохранить резервную копию", e)
                 showMessage("Не удалось сохранить резервную копию. Попробуйте ещё раз.", isError = true)
-                return@launch
             } finally {
                 _backupBusy.value = false
             }
-            showMessage("Резервная копия сохранена")
         }
     }
 
     /** Читает файл и показывает подтверждение перед заменой дневника. */
     fun loadBackup(uri: Uri) {
-        if (_backupBusy.value || _pendingImport.value != null) return
+        if (_backupBusy.value || _pendingImport.value != null || _backupPasswordRequired.value) return
         _backupBusy.value = true
         viewModelScope.launch {
             try {
-                val backup = withContext(Dispatchers.IO) {
-                    DiaryBackupJson.decode(readBackupText(uri))
+                val raw = withContext(Dispatchers.IO) { readBackupText(uri) }
+                if (DiaryBackupJson.isEncrypted(raw)) {
+                    pendingEncryptedBackup = raw
+                    _backupPasswordError.value = null
+                    _backupPasswordRequired.value = true
+                } else {
+                    _pendingImport.value = withContext(Dispatchers.IO) {
+                        DiaryBackupJson.decode(raw)
+                    }
                 }
-                _pendingImport.value = backup
             } catch (e: CancellationException) {
                 throw e
             } catch (e: BackupFormatException) {
@@ -221,6 +258,48 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 _backupBusy.value = false
             }
         }
+    }
+
+    fun submitBackupPassword(password: String) {
+        val raw = pendingEncryptedBackup ?: return
+        if (_backupBusy.value) return
+        if (password.isBlank()) {
+            _backupPasswordError.value = "Введите пароль."
+            return
+        }
+        _backupBusy.value = true
+        _backupPasswordError.value = null
+        viewModelScope.launch {
+            try {
+                val backup = withContext(Dispatchers.IO) {
+                    DiaryBackupJson.decode(raw, password)
+                }
+                pendingEncryptedBackup = null
+                _backupPasswordRequired.value = false
+                _pendingImport.value = backup
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: BackupPasswordException) {
+                _backupPasswordError.value = e.message ?: "Неверный пароль."
+            } catch (e: BackupFormatException) {
+                Log.w(TAG, "Некорректная защищённая копия", e)
+                pendingEncryptedBackup = null
+                _backupPasswordRequired.value = false
+                showMessage(e.message ?: "Не удалось прочитать копию.", isError = true)
+            } catch (e: Exception) {
+                Log.e(TAG, "Не удалось расшифровать копию", e)
+                _backupPasswordError.value = "Не удалось расшифровать копию."
+            } finally {
+                _backupBusy.value = false
+            }
+        }
+    }
+
+    fun cancelBackupPassword() {
+        if (_backupBusy.value) return
+        pendingEncryptedBackup = null
+        _backupPasswordRequired.value = false
+        _backupPasswordError.value = null
     }
 
     fun cancelImport() {
@@ -254,6 +333,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching { app.settings.apply(settings) }
                     .onFailure { settingsError = it }
             }
+            backup.profile?.let { profile ->
+                runCatching { app.settings.applyProfile(profile) }
+                    .onFailure { settingsError = it }
+            }
+            app.drafts.clear()
             runCatching { app.settings.demoSeeded = true }
                 .onFailure { Log.e(TAG, "Не удалось сохранить флаг демо-данных", it) }
 
@@ -274,6 +358,102 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 showMessage("Восстановлено: $count $word$bodyPart")
             }
         }
+    }
+
+    /** Включает автокопию в выбранной папке и сразу создаёт первую копию. */
+    fun enableAutoBackup(uri: Uri) {
+        if (_backupBusy.value) return
+        _backupBusy.value = true
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    app.backups.setAutoBackup(uri, folderName = null)
+                }
+                when (val outcome = app.backupService.autoBackup(force = true)) {
+                    is BackupOutcome.Saved -> showMessage("Автокопия включена")
+                    is BackupOutcome.Failed -> showMessage(outcome.message, isError = true)
+                    else -> showMessage("Автокопия включена")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Не удалось включить автокопию", e)
+                showMessage("Не удалось получить доступ к папке. Выберите её заново.", isError = true)
+            } finally {
+                _backupBusy.value = false
+            }
+        }
+    }
+
+    fun disableAutoBackup() {
+        app.backups.disableAutoBackup()
+        showMessage("Автокопия выключена")
+    }
+
+    fun runAutoBackupNow() {
+        if (_backupBusy.value) return
+        _backupBusy.value = true
+        viewModelScope.launch {
+            try {
+                when (val outcome = app.backupService.autoBackup(force = true)) {
+                    is BackupOutcome.Saved -> showMessage("Автокопия сохранена")
+                    is BackupOutcome.Failed -> showMessage(outcome.message, isError = true)
+                    BackupOutcome.NotConfigured ->
+                        showMessage("Сначала выберите папку для автокопии.", isError = true)
+                    BackupOutcome.Skipped -> Unit
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Не удалось создать автокопию", e)
+                showMessage("Не удалось создать автокопию. Попробуйте ещё раз.", isError = true)
+            } finally {
+                _backupBusy.value = false
+            }
+        }
+    }
+
+    /** Пароль хранится в Keystore и используется для будущих автокопий. */
+    fun setBackupPassword(password: String?) {
+        if (_backupBusy.value) return
+        _backupBusy.value = true
+        viewModelScope.launch {
+            try {
+                val ok = withContext(Dispatchers.IO) { app.backups.setPassword(password) }
+                when {
+                    password == null -> showMessage("Пароль для копий убран")
+                    ok -> showMessage("Пароль для копий сохранён")
+                    else -> showMessage(
+                        "Не удалось сохранить пароль на устройстве. Попробуйте ещё раз.",
+                        isError = true
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Не удалось сохранить пароль копий", e)
+                showMessage(
+                    "Не удалось сохранить пароль на устройстве. Попробуйте ещё раз.",
+                    isError = true
+                )
+            } finally {
+                _backupBusy.value = false
+            }
+        }
+    }
+
+    fun setAthleteGender(gender: NormGender) {
+        updateSetting("Не удалось сохранить пол") { app.settings.setAthleteGender(gender) }
+    }
+
+    fun setAthleteAgeGroup(ageGroup: NormAgeGroup) {
+        updateSetting("Не удалось сохранить возрастную группу") {
+            app.settings.setAthleteAgeGroup(ageGroup)
+        }
+    }
+
+    fun setAthleteWeight(weightKg: Double?) {
+        updateSetting("Не удалось сохранить вес") { app.settings.setAthleteWeight(weightKg) }
     }
 
     fun setTheme(mode: ThemeMode) {
@@ -315,17 +495,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 output.write(buffer, 0, read)
             }
             output.toByteArray().toString(Charsets.UTF_8)
-        }
-    }
-
-    private fun writeBackupText(uri: Uri, text: String) {
-        // Некоторые файловые провайдеры не поддерживают режим "wt".
-        val output = runCatching { app.contentResolver.openOutputStream(uri, "wt") }
-            .getOrNull()
-            ?: app.contentResolver.openOutputStream(uri)
-            ?: throw IOException("Не удалось открыть файл для записи")
-        output.use { stream ->
-            stream.write((text + "\n").toByteArray(Charsets.UTF_8))
         }
     }
 

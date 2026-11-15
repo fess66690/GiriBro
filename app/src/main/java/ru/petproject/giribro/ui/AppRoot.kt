@@ -60,7 +60,11 @@ private val bottomItems = listOf(
 private val profileRoutes = setOf("profile", "body", "norms", "settings")
 
 @Composable
-fun AppRoot(vm: AppViewModel) {
+fun AppRoot(
+    vm: AppViewModel,
+    shortcutRoute: String? = null,
+    onShortcutConsumed: () -> Unit = {}
+) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route ?: "diary"
@@ -80,6 +84,14 @@ fun AppRoot(vm: AppViewModel) {
                 duration = if (message.isError) SnackbarDuration.Long else SnackbarDuration.Short
             )
         }
+    }
+
+    LaunchedEffect(shortcutRoute) {
+        val target = shortcutRoute ?: return@LaunchedEffect
+        navController.navigate(target) {
+            launchSingleTop = true
+        }
+        onShortcutConsumed()
     }
 
     Scaffold(
@@ -204,9 +216,11 @@ fun AppRoot(vm: AppViewModel) {
                         defaultWeight = settings.defaultWeight,
                         initialWorkout = source,
                         repeat = isRepeat,
+                        restoreDraft = workoutId < 0L,
                         saving = saving,
-                        onSave = { workout ->
+                        onSave = { workout, onSaved ->
                             vm.saveWorkout(workout) {
+                                onSaved()
                                 if (navController.currentDestination?.route
                                         ?.startsWith("new") == true
                                 ) {

@@ -13,6 +13,24 @@ enum class NormGender(val label: String) {
     FEMALE("Женщины")
 }
 
+/**
+ * Возрастная группа для таблицы нормативов.
+ *
+ * В ЕВСК юношеские разряды выделены в отдельные колонки, поэтому профиль
+ * хранит только признак «показывать юношеские нормативы». Взрослым он не нужен.
+ */
+enum class NormAgeGroup(val label: String, val showsYouth: Boolean) {
+    ADULT("Взрослые", false),
+    YOUTH("Юноши", true)
+}
+
+/** Профиль спортсмена, который подставляется в нормативы. */
+data class AthleteProfile(
+    val gender: NormGender = NormGender.MALE,
+    val ageGroup: NormAgeGroup = NormAgeGroup.ADULT,
+    val weightKg: Double? = null
+)
+
 /** Дисциплина, для которой действует таблица. */
 enum class NormDiscipline(val label: String) {
     JERK("Толчок"),

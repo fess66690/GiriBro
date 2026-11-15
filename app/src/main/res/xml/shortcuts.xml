@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_new"
+        android:shortcutId="new_workout"
+        android:shortcutLongLabel="@string/shortcut_new_long"
+        android:shortcutShortLabel="@string/shortcut_new_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="ru.petproject.giribro.MainActivity"
+            android:targetPackage="ru.petproject.giribro">
+            <extra
+                android:name="shortcut"
+                android:value="new_workout" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_timer"
+        android:shortcutId="timer"
+        android:shortcutLongLabel="@string/shortcut_timer_long"
+        android:shortcutShortLabel="@string/shortcut_timer_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="ru.petproject.giribro.MainActivity"
+            android:targetPackage="ru.petproject.giribro">
+            <extra
+                android:name="shortcut"
+                android:value="timer" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_body"
+        android:shortcutId="body"
+        android:shortcutLongLabel="@string/shortcut_body_long"
+        android:shortcutShortLabel="@string/shortcut_body_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="ru.petproject.giribro.MainActivity"
+            android:targetPackage="ru.petproject.giribro">
+            <extra
+                android:name="shortcut"
+                android:value="body" />
+        </intent>
+    </shortcut>
+
+</shortcuts>

@@ -1,3 +1,10 @@
 <resources>
     <string name="app_name">ГириБро</string>
+
+    <string name="shortcut_new_short">Тренировка</string>
+    <string name="shortcut_new_long">Новая тренировка</string>
+    <string name="shortcut_timer_short">Таймер</string>
+    <string name="shortcut_timer_long">Таймер тренировки</string>
+    <string name="shortcut_body_short">Замеры</string>
+    <string name="shortcut_body_long">Замеры тела</string>
 </resources>

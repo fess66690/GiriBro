@@ -38,6 +38,9 @@ class SettingsRepository(context: Context) {
     private val _state = MutableStateFlow(load())
     val state: StateFlow<Settings> = _state.asStateFlow()
 
+    private val _profile = MutableStateFlow(loadProfile())
+    val profile: StateFlow<AthleteProfile> = _profile.asStateFlow()
+
     var demoSeeded: Boolean
         get() = runCatching { prefs.getBoolean(KEY_DEMO_SEEDED, false) }.getOrDefault(false)
         set(value) = prefs.edit().putBoolean(KEY_DEMO_SEEDED, value).apply()
@@ -52,6 +55,22 @@ class SettingsRepository(context: Context) {
             StatsPeriod.valueOf(prefs.getString(KEY_STATS_PERIOD, StatsPeriod.MONTH.name)!!)
         }.getOrDefault(StatsPeriod.MONTH)
     )
+
+    private fun loadProfile(): AthleteProfile {
+        val gender = runCatching {
+            NormGender.valueOf(prefs.getString(KEY_ATHLETE_GENDER, NormGender.MALE.name)!!)
+        }.getOrDefault(NormGender.MALE)
+        val ageGroup = runCatching {
+            NormAgeGroup.valueOf(
+                prefs.getString(KEY_ATHLETE_AGE_GROUP, NormAgeGroup.ADULT.name)!!
+            )
+        }.getOrDefault(NormAgeGroup.ADULT)
+        val rawWeight = runCatching { prefs.getFloat(KEY_ATHLETE_WEIGHT, Float.NaN) }
+            .getOrDefault(Float.NaN)
+        val weight = rawWeight.toDouble().takeIf { it.isFinite() && it > 0.0 }
+            ?.coerceIn(MIN_WEIGHT_KG, MAX_WEIGHT_KG)
+        return AthleteProfile(gender = gender, ageGroup = ageGroup, weightKg = weight)
+    }
 
     private fun readInt(key: String, defaultValue: Int): Int =
         runCatching { prefs.getInt(key, defaultValue) }.getOrDefault(defaultValue)
@@ -78,6 +97,49 @@ class SettingsRepository(context: Context) {
         _state.value = _state.value.copy(statsPeriod = period)
     }
 
+    fun setAthleteGender(gender: NormGender) {
+        prefs.edit().putString(KEY_ATHLETE_GENDER, gender.name).apply()
+        _profile.value = _profile.value.copy(gender = gender)
+    }
+
+    fun setAthleteAgeGroup(ageGroup: NormAgeGroup) {
+        prefs.edit().putString(KEY_ATHLETE_AGE_GROUP, ageGroup.name).apply()
+        _profile.value = _profile.value.copy(ageGroup = ageGroup)
+    }
+
+    fun setAthleteWeight(weightKg: Double?) {
+        val value = weightKg
+            ?.takeIf { it.isFinite() && it > 0.0 }
+            ?.coerceIn(MIN_WEIGHT_KG, MAX_WEIGHT_KG)
+        val editor = prefs.edit()
+        if (value == null) {
+            editor.remove(KEY_ATHLETE_WEIGHT)
+        } else {
+            editor.putFloat(KEY_ATHLETE_WEIGHT, value.toFloat())
+        }
+        editor.apply()
+        _profile.value = _profile.value.copy(weightKg = value)
+    }
+
+    /** Применяет профиль из резервной копии, не трогая настройки копирования. */
+    fun applyProfile(profile: AthleteProfile) {
+        val value = profile.copy(
+            weightKg = profile.weightKg
+                ?.takeIf { it.isFinite() && it > 0.0 }
+                ?.coerceIn(MIN_WEIGHT_KG, MAX_WEIGHT_KG)
+        )
+        val editor = prefs.edit()
+            .putString(KEY_ATHLETE_GENDER, value.gender.name)
+            .putString(KEY_ATHLETE_AGE_GROUP, value.ageGroup.name)
+        if (value.weightKg == null) {
+            editor.remove(KEY_ATHLETE_WEIGHT)
+        } else {
+            editor.putFloat(KEY_ATHLETE_WEIGHT, value.weightKg.toFloat())
+        }
+        editor.apply()
+        _profile.value = value
+    }
+
     /** Применяет настройки из резервной копии одним пакетом. */
     fun apply(settings: Settings) {
         val value = settings.copy(
@@ -98,6 +160,11 @@ class SettingsRepository(context: Context) {
         const val KEY_WEEKLY_GOAL = "weekly_goal"
         const val KEY_DEFAULT_WEIGHT = "default_weight"
         const val KEY_STATS_PERIOD = "stats_period"
+        const val KEY_ATHLETE_GENDER = "athlete_gender"
+        const val KEY_ATHLETE_AGE_GROUP = "athlete_age_group"
+        const val KEY_ATHLETE_WEIGHT = "athlete_weight"
         const val KEY_DEMO_SEEDED = "demo_seeded"
+        const val MIN_WEIGHT_KG = 20.0
+        const val MAX_WEIGHT_KG = 300.0
     }
 }
