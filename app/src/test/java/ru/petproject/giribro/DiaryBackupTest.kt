@@ -21,6 +21,7 @@ import ru.petproject.giribro.data.Settings
 import ru.petproject.giribro.data.StatsPeriod
 import ru.petproject.giribro.data.ThemeMode
 import ru.petproject.giribro.data.Workout
+import ru.petproject.giribro.vision.FixationPreset
 import java.time.LocalDate
 
 class DiaryBackupTest {
@@ -51,7 +52,8 @@ class DiaryBackupTest {
         themeMode = ThemeMode.LIGHT,
         weeklyGoal = 5,
         defaultWeight = 32,
-        statsPeriod = StatsPeriod.YEAR
+        statsPeriod = StatsPeriod.YEAR,
+        fixationPreset = FixationPreset.STRICT
     )
 
     @Test
@@ -263,6 +265,17 @@ class DiaryBackupTest {
         assertEquals(14, restored?.weeklyGoal)
         assertEquals(4, restored?.defaultWeight)
         assertEquals(StatsPeriod.MONTH, restored?.statsPeriod)
+        assertEquals(FixationPreset.COMPETITION, restored?.fixationPreset)
+    }
+
+    @Test
+    fun `old backup without fixation preset falls back to competition`() {
+        val root = JSONObject(DiaryBackupJson.encode(emptyList(), settings))
+        root.getJSONObject("settings").remove("fixationPreset")
+
+        val restored = DiaryBackupJson.decode(root.toString()).settings
+
+        assertEquals(FixationPreset.COMPETITION, restored?.fixationPreset)
     }
 
     @Test

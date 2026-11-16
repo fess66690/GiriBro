@@ -161,6 +161,46 @@ class TimerPlanTest {
     }
 
     @Test
+    fun `interval config only marks chosen rounds for counting`() {
+        val plan = TimerConfig(
+            workSec = 60,
+            restSec = 30,
+            rounds = 4,
+            prepSec = 0,
+            countRounds = setOf(2, 4),
+            exercise = ru.petproject.giribro.vision.RepExercise.SNATCH
+        ).toPlan()
+
+        val works = plan.steps.filter { it.kind == TimerStepKind.WORK }
+        assertEquals(listOf(false, true, false, true), works.map { it.countReps })
+        assertEquals(
+            listOf(null, ru.petproject.giribro.vision.RepExercise.SNATCH, null,
+                ru.petproject.giribro.vision.RepExercise.SNATCH),
+            works.map { it.exercise }
+        )
+    }
+
+    @Test
+    fun `workout marks only kettlebell exercises for counting`() {
+        val plan = workout(
+            Section(SectionType.JERK, listOf(SetEntry(24, 20, 60))),
+            Section(SectionType.GPP, listOf(SetEntry(0, 20, 60))),
+            Section(SectionType.SNATCH, listOf(SetEntry(24, 20, 60)))
+        ).toTimerPlan(prepSec = 0)
+
+        val works = plan.steps.filter { it.kind == TimerStepKind.WORK }
+        assertEquals(listOf(true, false, true), works.map { it.countReps })
+        assertEquals(
+            listOf(
+                ru.petproject.giribro.vision.RepExercise.JERK,
+                null,
+                ru.petproject.giribro.vision.RepExercise.SNATCH
+            ),
+            works.map { it.exercise }
+        )
+    }
+
+    @Test
     fun `workout with zero rest has only work steps`() {
         val plan = workout(
             Section(

@@ -1,11 +1,16 @@
 package ru.petproject.giribro.timer
 
+import ru.petproject.giribro.vision.RepExercise
+
 /** Конфигурация обычного интервального таймера. */
 data class TimerConfig(
     val workSec: Int = 120,
     val restSec: Int = 180,
     val rounds: Int = 5,
-    val prepSec: Int = 15
+    val prepSec: Int = 15,
+    /** Номера раундов (с 1), которые надо снимать камерой. */
+    val countRounds: Set<Int> = emptySet(),
+    val exercise: RepExercise = RepExercise.JERK
 ) {
     val totalSec: Int get() = prepSec + rounds * workSec + (rounds - 1) * restSec
 }

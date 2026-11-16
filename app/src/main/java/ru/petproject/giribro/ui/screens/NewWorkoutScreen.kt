@@ -88,6 +88,7 @@ import ru.petproject.giribro.util.formatClock
 import ru.petproject.giribro.util.ruDayMonth
 import ru.petproject.giribro.util.ruWeekday
 import ru.petproject.giribro.util.pluralRu
+import ru.petproject.giribro.vision.RepExercise
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -102,6 +103,7 @@ fun NewWorkoutScreen(
     saving: Boolean = false,
     onSave: (Workout, () -> Unit) -> Unit,
     onClose: () -> Unit,
+    onOpenCounter: ((RepExercise) -> Unit)? = null,
     vm: NewWorkoutViewModel = viewModel()
 ) {
     val draft by vm.draft.collectAsStateWithLifecycle()
@@ -381,7 +383,8 @@ fun NewWorkoutScreen(
                             ).show()
                         }
                     }
-                }
+                },
+                onOpenCounter = onOpenCounter
             )
         }
     }

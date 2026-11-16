@@ -2,6 +2,7 @@ package ru.petproject.giribro.data
 
 import org.json.JSONArray
 import org.json.JSONObject
+import ru.petproject.giribro.vision.FixationPreset
 import java.security.SecureRandom
 import java.time.LocalDate
 import java.util.Base64
@@ -118,6 +119,7 @@ object DiaryBackupJson {
                     .put("weeklyGoal", settings.weeklyGoal)
                     .put("defaultWeight", settings.defaultWeight)
                     .put("statsPeriod", settings.statsPeriod.name)
+                    .put("fixationPreset", settings.fixationPreset.name)
             )
             .apply {
                 profile?.let { put("profile", encodeProfile(it)) }
@@ -379,7 +381,8 @@ object DiaryBackupJson {
         themeMode = enumOrDefault(obj.optString("themeMode"), ThemeMode.DARK),
         weeklyGoal = obj.optInt("weeklyGoal", 3).coerceIn(1, 14),
         defaultWeight = obj.optInt("defaultWeight", 24).coerceIn(4, 48),
-        statsPeriod = enumOrDefault(obj.optString("statsPeriod"), StatsPeriod.MONTH)
+        statsPeriod = enumOrDefault(obj.optString("statsPeriod"), StatsPeriod.MONTH),
+        fixationPreset = FixationPreset.fromName(obj.optString("fixationPreset"))
     )
 
     private inline fun <reified T : Enum<T>> enumOrDefault(raw: String, default: T): T =

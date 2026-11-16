@@ -29,6 +29,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import ru.petproject.giribro.MainActivity
 import ru.petproject.giribro.R
+import ru.petproject.giribro.vision.RepExercise
 import java.util.Locale
 import kotlin.math.ceil
 
@@ -344,6 +345,8 @@ class TimerService : Service() {
         private const val EXTRA_PLAN_TOTALS = "plan_totals"
         private const val EXTRA_PLAN_MANUAL = "plan_manual"
         private const val EXTRA_PLAN_TASKS = "plan_tasks"
+        private const val EXTRA_PLAN_COUNT = "plan_count"
+        private const val EXTRA_PLAN_EXERCISES = "plan_exercises"
 
         private val _state = MutableStateFlow(TimerState())
         val state: StateFlow<TimerState> = _state.asStateFlow()
@@ -364,6 +367,11 @@ class TimerService : Service() {
                 putExtra(EXTRA_PLAN_TOTALS, plan.steps.map { it.rounds }.toIntArray())
                 putExtra(EXTRA_PLAN_MANUAL, plan.steps.map { it.manual }.toBooleanArray())
                 putStringArrayListExtra(EXTRA_PLAN_TASKS, ArrayList(plan.steps.map { it.task }))
+                putExtra(EXTRA_PLAN_COUNT, plan.steps.map { it.countReps }.toBooleanArray())
+                putStringArrayListExtra(
+                    EXTRA_PLAN_EXERCISES,
+                    ArrayList(plan.steps.map { it.exercise?.name.orEmpty() })
+                )
             }
             return runCatching {
                 ContextCompat.startForegroundService(context, intent)
@@ -396,6 +404,8 @@ class TimerService : Service() {
             val totals = intent.getIntArrayExtra(EXTRA_PLAN_TOTALS)
             val manuals = intent.getBooleanArrayExtra(EXTRA_PLAN_MANUAL)
             val tasks = intent.getStringArrayListExtra(EXTRA_PLAN_TASKS)
+            val counts = intent.getBooleanArrayExtra(EXTRA_PLAN_COUNT)
+            val exercises = intent.getStringArrayListExtra(EXTRA_PLAN_EXERCISES)
             val source = runCatching {
                 TimerPlanSource.valueOf(intent.getStringExtra(EXTRA_PLAN_SOURCE) ?: "")
             }.getOrNull() ?: TimerPlanSource.INTERVAL
@@ -411,7 +421,13 @@ class TimerService : Service() {
                     round = rounds?.getOrNull(index) ?: 0,
                     rounds = totals?.getOrNull(index) ?: 0,
                     manual = manuals?.getOrNull(index) ?: false,
-                    task = tasks?.getOrNull(index).orEmpty()
+                    task = tasks?.getOrNull(index).orEmpty(),
+                    countReps = counts?.getOrNull(index) ?: false,
+                    exercise = exercises?.getOrNull(index)
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { name ->
+                            runCatching { RepExercise.valueOf(name) }.getOrNull()
+                        }
                 )
             }
             if (steps.isEmpty()) return null

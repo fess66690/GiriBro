@@ -35,7 +35,9 @@ import kotlinx.coroutines.flow.collect
 import ru.petproject.giribro.AppViewModel
 import ru.petproject.giribro.timer.TimerPhase
 import ru.petproject.giribro.timer.TimerService
+import ru.petproject.giribro.vision.RepExercise
 import ru.petproject.giribro.ui.screens.BodyScreen
+import ru.petproject.giribro.ui.screens.CameraRepScreen
 import ru.petproject.giribro.ui.screens.DiaryScreen
 import ru.petproject.giribro.ui.screens.NewWorkoutScreen
 import ru.petproject.giribro.ui.screens.NormsScreen
@@ -98,7 +100,7 @@ fun AppRoot(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            if (baseRoute != "new" && !timerFullScreen) {
+            if (baseRoute != "new" && baseRoute != "camera-rep" && !timerFullScreen) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     bottomItems.forEach { item ->
                         NavigationBarItem(
@@ -186,13 +188,35 @@ fun AppRoot(
                             navController.navigate("diary") {
                                 launchSingleTop = true
                             }
+                        },
+                        onOpenCounter = { exercise ->
+                            navController.navigate("camera-rep?exercise=${exercise.name}")
                         }
                     )
                 }
                 composable("settings") {
                     SettingsScreen(
                         vm = vm,
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStack() },
+                        onOpenCameraCount = { navController.navigate("camera-rep") }
+                    )
+                }
+                composable(
+                    route = "camera-rep?exercise={exercise}",
+                    arguments = listOf(
+                        navArgument("exercise") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        }
+                    )
+                ) { entry ->
+                    val exercise = runCatching {
+                        RepExercise.valueOf(entry.arguments?.getString("exercise").orEmpty())
+                    }.getOrNull()
+                    CameraRepScreen(
+                        onBack = { navController.popBackStack() },
+                        initialExercise = exercise,
+                        initialPreset = settings.fixationPreset
                     )
                 }
                 composable(
@@ -228,7 +252,10 @@ fun AppRoot(
                                 }
                             }
                         },
-                        onClose = { navController.popBackStack() }
+                        onClose = { navController.popBackStack() },
+                        onOpenCounter = { exercise ->
+                            navController.navigate("camera-rep?exercise=${exercise.name}")
+                        }
                     )
                 }
             }

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
@@ -50,6 +51,7 @@ import ru.petproject.giribro.timer.TimerStep
 import ru.petproject.giribro.timer.TimerStepKind
 import ru.petproject.giribro.util.formatClockPadded
 import ru.petproject.giribro.util.pluralRu
+import ru.petproject.giribro.vision.RepExercise
 
 private val Ink = Color(0xFF0B0B0B)
 private val TimerGreen = Color(0xFF2FD06B)
@@ -73,6 +75,7 @@ fun FullScreenTimer(
     onComplete: () -> Unit,
     onStop: () -> Unit,
     onRestart: () -> Unit,
+    onOpenCounter: ((RepExercise) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val palette = when (state.phase) {
@@ -263,6 +266,35 @@ fun FullScreenTimer(
                     )
                 } else {
                     NextStepInfo(state)
+                }
+                val exerciseToCount = state.step
+                    ?.takeIf { it.countReps && state.isActive }
+                    ?.exercise
+                if (exerciseToCount != null && onOpenCounter != null) {
+                    Spacer(Modifier.height(14.dp))
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(ink)
+                            .clickable { onOpenCounter(exerciseToCount) }
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Outlined.PhotoCamera,
+                            contentDescription = null,
+                            tint = palette.background,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "СЧИТАТЬ ${exerciseToCount.short.uppercase()}",
+                            color = palette.background,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                    }
                 }
                 Spacer(Modifier.height(22.dp))
             }

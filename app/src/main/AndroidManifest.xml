@@ -3,6 +3,21 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!--
+        Камера нужна только для счётчика повторов. Кадры обрабатываются
+        на устройстве, видео не записывается и никуда не отправляется.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-feature
+        android:name="android.hardware.camera.front"
+        android:required="false" />
+
+    <!-- Камера необязательна: без неё приложение устанавливается и работает. -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -14,6 +29,14 @@
     -->
     <uses-permission
         android:name="android.permission.ACCESS_NETWORK_STATE"
+        tools:node="remove" />
+
+    <!--
+        MediaPipe подтягивает INTERNET из своей библиотеки, но модель позы
+        лежит в APK и работает без сети. Приложение остаётся офлайн.
+    -->
+    <uses-permission
+        android:name="android.permission.INTERNET"
         tools:node="remove" />
 
     <application

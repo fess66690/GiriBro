@@ -2,6 +2,7 @@ package ru.petproject.giribro.timer
 
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.Workout
+import ru.petproject.giribro.vision.RepExercise
 
 /** Откуда взялся план: обычный интервальный таймер или конкретная тренировка. */
 enum class TimerPlanSource { INTERVAL, WORKOUT }
@@ -14,6 +15,9 @@ enum class TimerStepKind { PREP, WORK, REST }
  *
  * [manual] — подход без заданного времени: таймер ждёт нажатия «Выполнено»,
  * а [task] показывает задание (вес и повторы).
+ *
+ * [countReps] — этот подход пользователь выбрал для съёмки камерой,
+ * [exercise] задаёт, какое упражнение считать.
  */
 data class TimerStep(
     val kind: TimerStepKind,
@@ -22,7 +26,9 @@ data class TimerStep(
     val round: Int = 0,
     val rounds: Int = 0,
     val manual: Boolean = false,
-    val task: String = ""
+    val task: String = "",
+    val countReps: Boolean = false,
+    val exercise: RepExercise? = null
 ) {
     val phase: TimerPhase
         get() = when (kind) {
@@ -54,13 +60,16 @@ fun TimerConfig.toPlan(): TimerPlan {
             add(TimerStep(TimerStepKind.PREP, prepSec, "Подготовка"))
         }
         for (round in 1..totalRounds) {
+            val counted = round in countRounds
             add(
                 TimerStep(
                     kind = TimerStepKind.WORK,
                     seconds = workSec.coerceAtLeast(1),
                     label = "Работа",
                     round = round,
-                    rounds = totalRounds
+                    rounds = totalRounds,
+                    countReps = counted,
+                    exercise = if (counted) exercise else null
                 )
             )
             if (round < totalRounds && restSec > 0) {
@@ -103,6 +112,9 @@ fun Workout.toTimerPlan(prepSec: Int = 15): TimerPlan {
                 if (set.weightKg > 0) append(" · ${set.weightKg} кг")
             }
             val manual = set.durationSec <= 0
+            // Подходы на гирях можно сразу снимать камерой: упражнение известно
+            // из раздела тренировки.
+            val exercise = RepExercise.fromSection(section.type)
             steps += TimerStep(
                 kind = TimerStepKind.WORK,
                 seconds = if (manual) 0 else set.durationSec,
@@ -110,7 +122,9 @@ fun Workout.toTimerPlan(prepSec: Int = 15): TimerPlan {
                 round = index + 1,
                 rounds = sets.size,
                 manual = manual,
-                task = set.taskLabel()
+                task = set.taskLabel(),
+                countReps = exercise != null,
+                exercise = exercise
             )
             if (completedWork < totalWork && set.restSec > 0) {
                 steps += TimerStep(
