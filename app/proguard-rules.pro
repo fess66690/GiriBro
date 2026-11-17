@@ -17,5 +17,16 @@
 # Переименование или удаление этих классов ломает распознавание позы.
 -keep class com.google.mediapipe.** { *; }
 -dontwarn com.google.mediapipe.**
+
+# Flogger находит вызвавший класс по стеку (CallerFinder.findCallerOf).
+# Если R8 переименует его классы или встроит findLoggingClass в forEnclosingClass,
+# поиск кадра возвращает null и падает static-инициализатор
+# com.google.mediapipe.framework.Graph:
+#   IllegalStateException: no caller found on the stack for: ...
+#   ExceptionInInitializerError -> NoClassDefFoundError: .../framework.Graph
+# Полный -keep запрещает и обфускацию, и inlining этих классов.
+-keep class com.google.common.flogger.** { *; }
+-dontwarn com.google.common.flogger.**
+
 -keep class com.google.protobuf.** { *; }
 -dontwarn com.google.protobuf.**
