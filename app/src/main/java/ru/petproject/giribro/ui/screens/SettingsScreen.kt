@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -63,6 +64,7 @@ import ru.petproject.giribro.data.asBodyNumber
 import ru.petproject.giribro.ui.components.SectionTitle
 import ru.petproject.giribro.util.pluralRu
 import ru.petproject.giribro.util.ruDayMonth
+import ru.petproject.giribro.vision.FixationPreset
 import java.time.Instant
 import java.time.ZoneId
 
@@ -70,7 +72,8 @@ import java.time.ZoneId
 @Composable
 fun SettingsScreen(
     vm: AppViewModel,
-    onBack: (() -> Unit)? = null
+    onBack: (() -> Unit)? = null,
+    onOpenCameraCount: (() -> Unit)? = null
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val profile by vm.profile.collectAsStateWithLifecycle()
@@ -218,6 +221,49 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        item {
+            SettingsCard("Счётчик повторов по камере") {
+                Text(
+                    "Фронтальная камера считает толчок, длинный цикл и рывок по скелету. " +
+                        "В режиме подхода «Запись» видео сохраняется только в выбранную " +
+                        "вами папку; в режиме «Счёт» видео не записывается.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                Text("Порог фиксации", style = MaterialTheme.typography.labelLarge)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    FixationPreset.entries.forEach { preset ->
+                        FilterChip(
+                            selected = settings.fixationPreset == preset,
+                            onClick = { vm.setFixationPreset(preset) },
+                            label = { Text("${preset.label} · ${preset.seconds} с") }
+                        )
+                    }
+                }
+                Text(
+                    settings.fixationPreset.hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                if (onOpenCameraCount != null) {
+                    OutlinedButton(onClick = onOpenCameraCount) {
+                        Icon(
+                            Icons.Outlined.PhotoCamera,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Открыть счётчик")
+                    }
+                }
             }
         }
 

@@ -8,6 +8,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,14 +26,18 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,15 +47,22 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.timer.TimerConfig
 import ru.petproject.giribro.timer.TimerPhase
 import ru.petproject.giribro.timer.TimerService
 import ru.petproject.giribro.ui.components.FullScreenTimer
 import ru.petproject.giribro.ui.components.SectionTitle
 import ru.petproject.giribro.util.formatClock
+import ru.petproject.giribro.vision.RepExercise
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TimerScreen(onBack: () -> Unit = {}) {
+fun TimerScreen(
+    onBack: () -> Unit = {},
+    onOpenCounter: ((RepExercise) -> Unit)? = null,
+    onAutoOpenCamera: ((RepExercise, SetCaptureMode, Int) -> Unit)? = null
+) {
     val context = LocalContext.current
     val state by TimerService.state.collectAsStateWithLifecycle()
 
@@ -57,8 +70,22 @@ fun TimerScreen(onBack: () -> Unit = {}) {
     var rest by rememberSaveable { mutableIntStateOf(180) }
     var rounds by rememberSaveable { mutableIntStateOf(5) }
     var prep by rememberSaveable { mutableIntStateOf(15) }
+    var exerciseName by rememberSaveable { mutableStateOf(RepExercise.JERK.name) }
+    var countedRounds by rememberSaveable(
+        stateSaver = listSaver(save = { it.toList() }, restore = { it.toSet() })
+    ) { mutableStateOf(emptySet<Int>()) }
+    val exercise = RepExercise.entries.firstOrNull { it.name == exerciseName }
+        ?: RepExercise.JERK
+    val counted = countedRounds.filter { it in 1..rounds }.toSet()
 
-    val config = TimerConfig(work, rest, rounds, prep)
+    val config = TimerConfig(
+        workSec = work,
+        restSec = rest,
+        rounds = rounds,
+        prepSec = prep,
+        countRounds = counted,
+        exercise = exercise
+    )
     val active = state.phase == TimerPhase.PREP ||
         state.phase == TimerPhase.WORK ||
         state.phase == TimerPhase.REST
@@ -101,7 +128,9 @@ fun TimerScreen(onBack: () -> Unit = {}) {
                         Toast.LENGTH_SHORT
                     ).show()
                 }
-            }
+            },
+            onOpenCounter = onOpenCounter,
+            onAutoOpenCamera = onAutoOpenCamera
         )
         return
     }
@@ -150,6 +179,81 @@ fun TimerScreen(onBack: () -> Unit = {}) {
                         Spacer(Modifier.width(8.dp))
                         Text("Начать", style = MaterialTheme.typography.titleMedium)
                     }
+                }
+            }
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(Modifier.padding(20.dp)) {
+                    SectionTitle("Какие подходы снимать")
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Отметьте раунды, которые посчитает камера. На старте подхода " +
+                            "на экране таймера появится кнопка «Считать».",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text("Упражнение", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        RepExercise.entries.forEach { item ->
+                            FilterChip(
+                                selected = exercise == item,
+                                onClick = { exerciseName = item.name },
+                                label = { Text(item.short) }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Раунды", style = MaterialTheme.typography.labelLarge)
+                        Row {
+                            TextButton(
+                                onClick = { countedRounds = (1..rounds).toSet() }
+                            ) { Text("Все") }
+                            TextButton(
+                                onClick = { countedRounds = emptySet() }
+                            ) { Text("Сброс") }
+                        }
+                    }
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        (1..rounds).forEach { round ->
+                            FilterChip(
+                                selected = round in counted,
+                                onClick = {
+                                    countedRounds = if (round in countedRounds) {
+                                        countedRounds - round
+                                    } else {
+                                        countedRounds + round
+                                    }
+                                },
+                                label = { Text("$round") }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (counted.isEmpty()) {
+                            "Съёмка выключена"
+                        } else {
+                            "Снимаем: ${counted.sorted().joinToString(", ")} · ${exercise.label}"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

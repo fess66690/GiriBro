@@ -34,6 +34,7 @@ import ru.petproject.giribro.data.ThemeMode
 import ru.petproject.giribro.data.Workout
 import ru.petproject.giribro.data.WorkoutValidator
 import ru.petproject.giribro.util.pluralRu
+import ru.petproject.giribro.vision.FixationPreset
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 
@@ -473,6 +474,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun setStatsPeriod(period: StatsPeriod) {
         updateSetting("Не удалось сохранить период статистики") {
             app.settings.setStatsPeriod(period)
+        }
+    }
+
+    fun setFixationPreset(preset: FixationPreset) {
+        updateSetting("Не удалось сохранить порог фиксации") {
+            app.settings.setFixationPreset(preset)
         }
     }
 

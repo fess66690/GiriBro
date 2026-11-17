@@ -54,13 +54,33 @@ enum class SectionType(
     }
 }
 
+/** Что делать с камерой во время подхода. */
+enum class SetCaptureMode {
+    /** Камера не используется. */
+    NONE,
+
+    /** Полноэкранная камера со счётом и записью видео в выбранную папку. */
+    RECORD,
+
+    /** Полноэкранная камера со счётом без записи видео. */
+    COUNT;
+
+    companion object {
+        /** Неизвестное или отсутствующее значение старых копий — без камеры. */
+        fun fromName(name: String?): SetCaptureMode =
+            entries.firstOrNull { it.name == name } ?: NONE
+    }
+}
+
 data class SetEntry(
     val weightKg: Int,
     val reps: Int,
     /** Время подхода в секундах; 0 — не заполнено. */
     val durationSec: Int = 0,
     /** Отдых после этого подхода, секунды. У последнего подхода не используется. */
-    val restSec: Int = DEFAULT_REST_SEC
+    val restSec: Int = DEFAULT_REST_SEC,
+    /** Режим съёмки подхода; по умолчанию камера не используется. */
+    val captureMode: SetCaptureMode = SetCaptureMode.NONE
 ) {
     val volumeKg: Double get() = weightKg.toDouble() * reps
 

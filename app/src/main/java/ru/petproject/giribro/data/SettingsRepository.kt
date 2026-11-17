@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import ru.petproject.giribro.vision.FixationPreset
 import java.time.LocalDate
 
 enum class ThemeMode { SYSTEM, DARK, LIGHT }
@@ -29,7 +30,8 @@ data class Settings(
     val themeMode: ThemeMode = ThemeMode.DARK,
     val weeklyGoal: Int = 3,
     val defaultWeight: Int = 24,
-    val statsPeriod: StatsPeriod = StatsPeriod.MONTH
+    val statsPeriod: StatsPeriod = StatsPeriod.MONTH,
+    val fixationPreset: FixationPreset = FixationPreset.COMPETITION
 )
 
 class SettingsRepository(context: Context) {
@@ -45,6 +47,16 @@ class SettingsRepository(context: Context) {
         get() = runCatching { prefs.getBoolean(KEY_DEMO_SEEDED, false) }.getOrDefault(false)
         set(value) = prefs.edit().putBoolean(KEY_DEMO_SEEDED, value).apply()
 
+    /** Папка SAF для видео подходов; не попадает в резервные копии. */
+    var videoFolderUri: String?
+        get() = runCatching { prefs.getString(KEY_VIDEO_FOLDER_URI, null) }.getOrNull()
+        set(value) {
+            val editor = prefs.edit()
+            if (value == null) editor.remove(KEY_VIDEO_FOLDER_URI)
+            else editor.putString(KEY_VIDEO_FOLDER_URI, value)
+            editor.apply()
+        }
+
     private fun load(): Settings = Settings(
         themeMode = runCatching {
             ThemeMode.valueOf(prefs.getString(KEY_THEME, ThemeMode.DARK.name)!!)
@@ -53,7 +65,10 @@ class SettingsRepository(context: Context) {
         defaultWeight = readInt(KEY_DEFAULT_WEIGHT, 24).coerceIn(4, 48),
         statsPeriod = runCatching {
             StatsPeriod.valueOf(prefs.getString(KEY_STATS_PERIOD, StatsPeriod.MONTH.name)!!)
-        }.getOrDefault(StatsPeriod.MONTH)
+        }.getOrDefault(StatsPeriod.MONTH),
+        fixationPreset = FixationPreset.fromName(
+            runCatching { prefs.getString(KEY_FIXATION_PRESET, null) }.getOrNull()
+        )
     )
 
     private fun loadProfile(): AthleteProfile {
@@ -95,6 +110,11 @@ class SettingsRepository(context: Context) {
     fun setStatsPeriod(period: StatsPeriod) {
         prefs.edit().putString(KEY_STATS_PERIOD, period.name).apply()
         _state.value = _state.value.copy(statsPeriod = period)
+    }
+
+    fun setFixationPreset(preset: FixationPreset) {
+        prefs.edit().putString(KEY_FIXATION_PRESET, preset.name).apply()
+        _state.value = _state.value.copy(fixationPreset = preset)
     }
 
     fun setAthleteGender(gender: NormGender) {
@@ -151,6 +171,7 @@ class SettingsRepository(context: Context) {
             .putInt(KEY_WEEKLY_GOAL, value.weeklyGoal)
             .putInt(KEY_DEFAULT_WEIGHT, value.defaultWeight)
             .putString(KEY_STATS_PERIOD, value.statsPeriod.name)
+            .putString(KEY_FIXATION_PRESET, value.fixationPreset.name)
             .apply()
         _state.value = value
     }
@@ -160,10 +181,12 @@ class SettingsRepository(context: Context) {
         const val KEY_WEEKLY_GOAL = "weekly_goal"
         const val KEY_DEFAULT_WEIGHT = "default_weight"
         const val KEY_STATS_PERIOD = "stats_period"
+        const val KEY_FIXATION_PRESET = "fixation_preset"
         const val KEY_ATHLETE_GENDER = "athlete_gender"
         const val KEY_ATHLETE_AGE_GROUP = "athlete_age_group"
         const val KEY_ATHLETE_WEIGHT = "athlete_weight"
         const val KEY_DEMO_SEEDED = "demo_seeded"
+        const val KEY_VIDEO_FOLDER_URI = "video_folder_uri"
         const val MIN_WEIGHT_KG = 20.0
         const val MAX_WEIGHT_KG = 300.0
     }

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import ru.petproject.giribro.data.Section
 import ru.petproject.giribro.data.SectionType
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.Workout
 import ru.petproject.giribro.data.WorkoutDraft
@@ -182,6 +183,23 @@ class NewWorkoutViewModel : ViewModel() {
                                 restSec = (set.restSec + delta)
                                     .coerceIn(0, SetEntry.MAX_REST_SEC)
                             )
+                        }
+                    )
+                }
+            )
+        }
+    }
+
+    /** Меняет режим съёмки конкретного подхода; «Запись» и «Счёт» исключают друг друга. */
+    fun setCaptureMode(key: Long, setIndex: Int, mode: SetCaptureMode) {
+        _draft.update { draft ->
+            draft.copy(
+                sections = draft.sections.map { section ->
+                    if (section.key != key) return@map section
+                    section.copy(
+                        sets = section.sets.mapIndexed { index, set ->
+                            if (index != setIndex) return@mapIndexed set
+                            set.copy(captureMode = mode)
                         }
                     )
                 }

@@ -5,6 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.petproject.giribro.data.Section
 import ru.petproject.giribro.data.SectionType
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.Workout
 import ru.petproject.giribro.timer.TimerConfig
@@ -158,6 +159,66 @@ class TimerPlanTest {
         assertEquals(45, plan.steps[1].seconds)
         assertEquals(45, plan.restSec)
         assertEquals(60, plan.steps.last().seconds)
+    }
+
+    @Test
+    fun `interval config only marks chosen rounds for counting`() {
+        val plan = TimerConfig(
+            workSec = 60,
+            restSec = 30,
+            rounds = 4,
+            prepSec = 0,
+            countRounds = setOf(2, 4),
+            exercise = ru.petproject.giribro.vision.RepExercise.SNATCH
+        ).toPlan()
+
+        val works = plan.steps.filter { it.kind == TimerStepKind.WORK }
+        assertEquals(listOf(false, true, false, true), works.map { it.countReps })
+        assertEquals(
+            listOf(null, ru.petproject.giribro.vision.RepExercise.SNATCH, null,
+                ru.petproject.giribro.vision.RepExercise.SNATCH),
+            works.map { it.exercise }
+        )
+    }
+
+    @Test
+    fun `workout marks only kettlebell exercises for counting`() {
+        val plan = workout(
+            Section(SectionType.JERK, listOf(SetEntry(24, 20, 60))),
+            Section(SectionType.GPP, listOf(SetEntry(0, 20, 60))),
+            Section(SectionType.SNATCH, listOf(SetEntry(24, 20, 60)))
+        ).toTimerPlan(prepSec = 0)
+
+        val works = plan.steps.filter { it.kind == TimerStepKind.WORK }
+        assertEquals(listOf(true, false, true), works.map { it.countReps })
+        assertEquals(
+            listOf(
+                ru.petproject.giribro.vision.RepExercise.JERK,
+                null,
+                ru.petproject.giribro.vision.RepExercise.SNATCH
+            ),
+            works.map { it.exercise }
+        )
+    }
+
+    @Test
+    fun `workout keeps capture mode of every set`() {
+        val plan = workout(
+            Section(
+                SectionType.JERK,
+                listOf(
+                    SetEntry(24, 20, 60, captureMode = SetCaptureMode.RECORD),
+                    SetEntry(24, 15, 60, captureMode = SetCaptureMode.COUNT)
+                )
+            ),
+            Section(SectionType.GPP, listOf(SetEntry(0, 20, 60)))
+        ).toTimerPlan(prepSec = 0)
+
+        val works = plan.steps.filter { it.kind == TimerStepKind.WORK }
+        assertEquals(
+            listOf(SetCaptureMode.RECORD, SetCaptureMode.COUNT, SetCaptureMode.NONE),
+            works.map { it.captureMode }
+        )
     }
 
     @Test

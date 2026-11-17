@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.petproject.giribro.data.Section
 import ru.petproject.giribro.data.SectionType
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.WorkoutJson
 
@@ -137,5 +138,48 @@ class WorkoutJsonTest {
         assertTrue(WorkoutJson.decode("not a json").isEmpty())
         assertTrue(WorkoutJson.decode("{}").isEmpty())
         assertTrue(WorkoutJson.decode("").isEmpty())
+    }
+
+    @Test
+    fun `capture mode survives encode and decode`() {
+        val sections = listOf(
+            Section(
+                SectionType.JERK,
+                listOf(
+                    SetEntry(24, 20, 120, captureMode = SetCaptureMode.RECORD),
+                    SetEntry(24, 15, 90, captureMode = SetCaptureMode.COUNT),
+                    SetEntry(24, 10, 60)
+                )
+            )
+        )
+
+        assertEquals(sections, WorkoutJson.decode(WorkoutJson.encode(sections)))
+        assertTrue(WorkoutJson.encode(sections).contains("\"cm\":\"RECORD\""))
+        assertTrue(!WorkoutJson.encode(sections).contains("\"cm\":\"NONE\""))
+    }
+
+    @Test
+    fun `old sets without capture mode are decoded as none`() {
+        val raw = JSONArray()
+            .put(
+                JSONObject()
+                    .put("type", SectionType.SNATCH.name)
+                    .put(
+                        "sets",
+                        JSONArray()
+                            .put(JSONObject().put("w", 24).put("r", 20))
+                            .put(
+                                JSONObject()
+                                    .put("w", 24)
+                                    .put("r", 15)
+                                    .put("cm", "UNKNOWN")
+                            )
+                    )
+            )
+            .toString()
+
+        val sets = WorkoutJson.decode(raw).single().sets
+        assertEquals(SetCaptureMode.NONE, sets[0].captureMode)
+        assertEquals(SetCaptureMode.NONE, sets[1].captureMode)
     }
 }

@@ -33,9 +33,12 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import kotlinx.coroutines.flow.collect
 import ru.petproject.giribro.AppViewModel
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.timer.TimerPhase
 import ru.petproject.giribro.timer.TimerService
+import ru.petproject.giribro.vision.RepExercise
 import ru.petproject.giribro.ui.screens.BodyScreen
+import ru.petproject.giribro.ui.screens.CameraRepScreen
 import ru.petproject.giribro.ui.screens.DiaryScreen
 import ru.petproject.giribro.ui.screens.NewWorkoutScreen
 import ru.petproject.giribro.ui.screens.NormsScreen
@@ -58,6 +61,15 @@ private val bottomItems = listOf(
 )
 
 private val profileRoutes = setOf("profile", "body", "norms", "settings")
+
+private fun cameraRepRoute(
+    exercise: RepExercise?,
+    mode: SetCaptureMode = SetCaptureMode.NONE,
+    durationSec: Int = 0
+): String {
+    val exerciseArg = exercise?.name.orEmpty()
+    return "camera-rep?exercise=$exerciseArg&mode=${mode.name}&duration=$durationSec"
+}
 
 @Composable
 fun AppRoot(
@@ -98,7 +110,7 @@ fun AppRoot(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            if (baseRoute != "new" && !timerFullScreen) {
+            if (baseRoute != "new" && baseRoute != "camera-rep" && !timerFullScreen) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     bottomItems.forEach { item ->
                         NavigationBarItem(
@@ -186,13 +198,49 @@ fun AppRoot(
                             navController.navigate("diary") {
                                 launchSingleTop = true
                             }
+                        },
+                        onOpenCounter = { exercise ->
+                            navController.navigate(cameraRepRoute(exercise))
+                        },
+                        onAutoOpenCamera = { exercise, mode, durationSec ->
+                            navController.navigate(cameraRepRoute(exercise, mode, durationSec))
                         }
                     )
                 }
                 composable("settings") {
                     SettingsScreen(
                         vm = vm,
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStack() },
+                        onOpenCameraCount = { navController.navigate("camera-rep") }
+                    )
+                }
+                composable(
+                    route = "camera-rep?exercise={exercise}&mode={mode}&duration={duration}",
+                    arguments = listOf(
+                        navArgument("exercise") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                        navArgument("mode") {
+                            type = NavType.StringType
+                            defaultValue = SetCaptureMode.NONE.name
+                        },
+                        navArgument("duration") {
+                            type = NavType.IntType
+                            defaultValue = 0
+                        }
+                    )
+                ) { entry ->
+                    val exercise = runCatching {
+                        RepExercise.valueOf(entry.arguments?.getString("exercise").orEmpty())
+                    }.getOrNull()
+                    val mode = SetCaptureMode.fromName(entry.arguments?.getString("mode"))
+                    CameraRepScreen(
+                        onBack = { navController.popBackStack() },
+                        initialExercise = exercise,
+                        initialPreset = settings.fixationPreset,
+                        initialCaptureMode = mode,
+                        initialDurationSec = entry.arguments?.getInt("duration") ?: 0
                     )
                 }
                 composable(
@@ -228,7 +276,13 @@ fun AppRoot(
                                 }
                             }
                         },
-                        onClose = { navController.popBackStack() }
+                        onClose = { navController.popBackStack() },
+                        onOpenCounter = { exercise ->
+                            navController.navigate(cameraRepRoute(exercise))
+                        },
+                        onAutoOpenCamera = { exercise, mode, durationSec ->
+                            navController.navigate(cameraRepRoute(exercise, mode, durationSec))
+                        }
                     )
                 }
             }

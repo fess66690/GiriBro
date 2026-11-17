@@ -22,8 +22,8 @@ android {
         applicationId = "ru.petproject.giribro"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     signingConfigs {
@@ -47,7 +47,18 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Для отладки на эмуляторе (x86_64) и на реальных ARM-устройствах.
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            }
+        }
         release {
+            // MediaPipe поставляет нативные библиотеки под каждую ABI.
+            // В RuStore уходит универсальный APK только для ARM-устройств.
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -106,6 +117,15 @@ dependencies {
 
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
+
+    val cameraXVersion = "1.4.1"
+    implementation("androidx.camera:camera-core:$cameraXVersion")
+    implementation("androidx.camera:camera-camera2:$cameraXVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
+    implementation("androidx.camera:camera-view:$cameraXVersion")
+    implementation("androidx.camera:camera-video:$cameraXVersion")
+
+    implementation("com.google.mediapipe:tasks-vision:0.10.35")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
