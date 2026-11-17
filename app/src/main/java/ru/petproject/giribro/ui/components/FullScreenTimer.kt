@@ -35,6 +35,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.timer.TimerPhase
 import ru.petproject.giribro.timer.TimerState
 import ru.petproject.giribro.timer.TimerStep
@@ -76,6 +78,7 @@ fun FullScreenTimer(
     onStop: () -> Unit,
     onRestart: () -> Unit,
     onOpenCounter: ((RepExercise) -> Unit)? = null,
+    onAutoOpenCamera: ((RepExercise, SetCaptureMode, Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val palette = when (state.phase) {
@@ -97,6 +100,17 @@ fun FullScreenTimer(
             as? InputMethodManager
         imm?.hideSoftInputFromWindow(view.windowToken, 0)
     }
+    val autoOpenCamera = rememberUpdatedState(onAutoOpenCamera)
+    LaunchedEffect(state.plan, state.stepIndex, state.phase, autoOpenCamera) {
+        val step = state.step
+        val exercise = step?.exercise
+        val mode = step?.captureMode
+        if (state.phase != TimerPhase.WORK || exercise == null || mode == null ||
+            mode == SetCaptureMode.NONE
+        ) return@LaunchedEffect
+        autoOpenCamera.value?.invoke(exercise, mode, step.seconds)
+    }
+
     val phaseTitle = when {
         done -> "Готово"
         manual -> "Задание"

@@ -123,6 +123,7 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$cameraXVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
     implementation("androidx.camera:camera-view:$cameraXVersion")
+    implementation("androidx.camera:camera-video:$cameraXVersion")
 
     implementation("com.google.mediapipe:tasks-vision:0.10.35")
 

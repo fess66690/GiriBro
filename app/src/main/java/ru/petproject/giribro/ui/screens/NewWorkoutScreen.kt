@@ -69,6 +69,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.petproject.giribro.data.SectionType
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.Workout
 import ru.petproject.giribro.data.WorkoutDraft
@@ -104,6 +105,7 @@ fun NewWorkoutScreen(
     onSave: (Workout, () -> Unit) -> Unit,
     onClose: () -> Unit,
     onOpenCounter: ((RepExercise) -> Unit)? = null,
+    onAutoOpenCamera: ((RepExercise, SetCaptureMode, Int) -> Unit)? = null,
     vm: NewWorkoutViewModel = viewModel()
 ) {
     val draft by vm.draft.collectAsStateWithLifecycle()
@@ -286,6 +288,9 @@ fun NewWorkoutScreen(
                     onAddSet = { addSetFor = section.key },
                     onRemoveSet = { index -> vm.removeSet(section.key, index) },
                     onRestChange = { index, delta -> vm.changeRest(section.key, index, delta) },
+                    onCaptureModeChange = { index, mode ->
+                        vm.setCaptureMode(section.key, index, mode)
+                    },
                     onRemoveSection = { vm.removeSection(section.key) }
                 )
             }
@@ -384,7 +389,8 @@ fun NewWorkoutScreen(
                         }
                     }
                 },
-                onOpenCounter = onOpenCounter
+                onOpenCounter = onOpenCounter,
+                onAutoOpenCamera = onAutoOpenCamera
             )
         }
     }
@@ -493,6 +499,7 @@ fun NewWorkoutScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SectionEditor(
     type: SectionType,
@@ -501,6 +508,7 @@ private fun SectionEditor(
     onAddSet: () -> Unit,
     onRemoveSet: (Int) -> Unit,
     onRestChange: (setIndex: Int, delta: Int) -> Unit,
+    onCaptureModeChange: (setIndex: Int, SetCaptureMode) -> Unit,
     onRemoveSection: () -> Unit
 ) {
     val accent = sectionColor(type)
@@ -580,6 +588,42 @@ private fun SectionEditor(
                                 contentDescription = "Удалить подход",
                                 modifier = Modifier.size(14.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    if (RepExercise.fromSection(type) != null) {
+                        FlowRow(
+                            Modifier.padding(bottom = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            FilterChip(
+                                selected = set.captureMode == SetCaptureMode.RECORD,
+                                onClick = {
+                                    onCaptureModeChange(
+                                        index,
+                                        if (set.captureMode == SetCaptureMode.RECORD) {
+                                            SetCaptureMode.NONE
+                                        } else {
+                                            SetCaptureMode.RECORD
+                                        }
+                                    )
+                                },
+                                label = { Text("Запись") }
+                            )
+                            FilterChip(
+                                selected = set.captureMode == SetCaptureMode.COUNT,
+                                onClick = {
+                                    onCaptureModeChange(
+                                        index,
+                                        if (set.captureMode == SetCaptureMode.COUNT) {
+                                            SetCaptureMode.NONE
+                                        } else {
+                                            SetCaptureMode.COUNT
+                                        }
+                                    )
+                                },
+                                label = { Text("Счёт") }
                             )
                         }
                     }
@@ -842,6 +886,7 @@ private fun AddSetDialog(
     var repsText by remember { mutableStateOf("20") }
     var minutesText by remember { mutableStateOf("") }
     var secondsText by remember { mutableStateOf("") }
+    var captureMode by remember { mutableStateOf(SetCaptureMode.NONE) }
 
     val weight = weightText.toIntOrNull()
     val reps = repsText.toIntOrNull()
@@ -965,6 +1010,54 @@ private fun AddSetDialog(
                     }
                 }
 
+                // Камера имеет смысл только для трёх упражнений со счётом повторов.
+                if (RepExercise.fromSection(type) != null) {
+                    Text(
+                        "Съёмка подхода",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        FilterChip(
+                            selected = captureMode == SetCaptureMode.RECORD,
+                            onClick = {
+                                captureMode = if (captureMode == SetCaptureMode.RECORD) {
+                                    SetCaptureMode.NONE
+                                } else {
+                                    SetCaptureMode.RECORD
+                                }
+                            },
+                            label = { Text("Запись") }
+                        )
+                        FilterChip(
+                            selected = captureMode == SetCaptureMode.COUNT,
+                            onClick = {
+                                captureMode = if (captureMode == SetCaptureMode.COUNT) {
+                                    SetCaptureMode.NONE
+                                } else {
+                                    SetCaptureMode.COUNT
+                                }
+                            },
+                            label = { Text("Счёт") }
+                        )
+                    }
+                    Text(
+                        when (captureMode) {
+                            SetCaptureMode.RECORD ->
+                                "Камера, счёт и видео в выбранную папку."
+                            SetCaptureMode.COUNT ->
+                                "Камера и счёт без записи видео."
+                            SetCaptureMode.NONE ->
+                                "Камера не используется."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 if (weight != null && reps != null) {
                     Text(
                         buildString {
@@ -991,7 +1084,16 @@ private fun AddSetDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(SetEntry(weight ?: 0, reps ?: 0, durationSec)) },
+                onClick = {
+                    onConfirm(
+                        SetEntry(
+                            weight ?: 0,
+                            reps ?: 0,
+                            durationSec,
+                            captureMode = captureMode
+                        )
+                    )
+                },
                 enabled = valid
             ) { Text("Добавить") }
         },

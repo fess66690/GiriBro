@@ -2,6 +2,7 @@ package ru.petproject.giribro.ui.screens
 
 import android.app.Application
 import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.vision.ExerciseProfile
 import ru.petproject.giribro.vision.FixationPreset
 import ru.petproject.giribro.vision.MediaPipePoseSource
@@ -37,7 +39,10 @@ data class CameraRepUiState(
     val lastFixationSec: Float = 0f,
     val lastRepConfident: Boolean = true,
     val frame: PoseFrame? = null,
-    val error: String? = null
+    val error: String? = null,
+    val captureMode: SetCaptureMode = SetCaptureMode.NONE,
+    val setDurationSec: Int = 0,
+    val setRemainingSec: Int = 0
 ) {
     val elapsedSec: Int get() = (elapsedMs / 1000L).toInt()
     val rpm: Int
@@ -68,9 +73,7 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
                 onError = ::onPoseError
             ).also { poseSource = it }
         }.onFailure { error ->
-            _state.value = _state.value.copy(
-                error = error.message ?: "Не удалось запустить распознавание позы"
-            )
+            reportError("Не удалось создать распознаватель позы", error)
         }.getOrNull()
     }
 
@@ -106,6 +109,16 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         )
     }
 
+    /** Автостарт подхода, открытого из таймера. */
+    fun startSet(mode: SetCaptureMode, durationSec: Int) {
+        _state.value = _state.value.copy(
+            captureMode = mode,
+            setDurationSec = durationSec.coerceAtLeast(0),
+            setRemainingSec = durationSec.coerceAtLeast(0)
+        )
+        start()
+    }
+
     fun start() {
         if (_state.value.running) return
         counter.reset()
@@ -118,6 +131,7 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
             shortFixations = 0,
             fixationProgress = 0f,
             elapsedMs = 0L,
+            setRemainingSec = _state.value.setDurationSec,
             activeSides = emptySet(),
             lastFixationSec = 0f,
             lastRepConfident = true
@@ -127,9 +141,21 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
             while (isActive) {
                 delay(200)
                 if (!_state.value.running) break
+                val elapsed = SystemClock.elapsedRealtime() - startedAt
+                val duration = _state.value.setDurationSec
+                val remaining = if (duration > 0) {
+                    (duration - elapsed / 1000L).coerceAtLeast(0L).toInt()
+                } else {
+                    0
+                }
                 _state.value = _state.value.copy(
-                    elapsedMs = SystemClock.elapsedRealtime() - startedAt
+                    elapsedMs = elapsed,
+                    setRemainingSec = remaining
                 )
+                if (duration > 0 && remaining == 0) {
+                    stop()
+                    break
+                }
             }
         }
     }
@@ -211,9 +237,25 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun onPoseError(error: Throwable) {
-        _state.value = _state.value.copy(
-            error = error.message ?: "Ошибка распознавания позы"
-        )
+        reportError("Ошибка распознавания позы", error)
+    }
+
+    /** Пишет полный стек в Logcat и оставляет читаемые детали в карточке ошибки. */
+    private fun reportError(context: String, error: Throwable) {
+        Log.e(TAG, context, error)
+        val details = buildString {
+            append(error.javaClass.name)
+            error.message?.let { append(": ").append(it) }
+            var cause = error.cause
+            var depth = 0
+            while (cause != null && cause !== error && depth < 5) {
+                append("\n← ").append(cause.javaClass.name)
+                cause.message?.let { append(": ").append(it) }
+                cause = cause.cause
+                depth++
+            }
+        }
+        _state.value = _state.value.copy(error = "$context\n$details")
     }
 
     override fun onCleared() {
@@ -221,5 +263,9 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         poseSource?.close()
         poseSource = null
         super.onCleared()
+    }
+
+    companion object {
+        private const val TAG = "GiriBroCAM"
     }
 }

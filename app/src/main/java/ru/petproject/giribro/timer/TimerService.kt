@@ -29,6 +29,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import ru.petproject.giribro.MainActivity
 import ru.petproject.giribro.R
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.vision.RepExercise
 import java.util.Locale
 import kotlin.math.ceil
@@ -347,6 +348,7 @@ class TimerService : Service() {
         private const val EXTRA_PLAN_TASKS = "plan_tasks"
         private const val EXTRA_PLAN_COUNT = "plan_count"
         private const val EXTRA_PLAN_EXERCISES = "plan_exercises"
+        private const val EXTRA_PLAN_CAPTURE_MODES = "plan_capture_modes"
 
         private val _state = MutableStateFlow(TimerState())
         val state: StateFlow<TimerState> = _state.asStateFlow()
@@ -371,6 +373,10 @@ class TimerService : Service() {
                 putStringArrayListExtra(
                     EXTRA_PLAN_EXERCISES,
                     ArrayList(plan.steps.map { it.exercise?.name.orEmpty() })
+                )
+                putStringArrayListExtra(
+                    EXTRA_PLAN_CAPTURE_MODES,
+                    ArrayList(plan.steps.map { it.captureMode.name })
                 )
             }
             return runCatching {
@@ -406,6 +412,7 @@ class TimerService : Service() {
             val tasks = intent.getStringArrayListExtra(EXTRA_PLAN_TASKS)
             val counts = intent.getBooleanArrayExtra(EXTRA_PLAN_COUNT)
             val exercises = intent.getStringArrayListExtra(EXTRA_PLAN_EXERCISES)
+            val captureModes = intent.getStringArrayListExtra(EXTRA_PLAN_CAPTURE_MODES)
             val source = runCatching {
                 TimerPlanSource.valueOf(intent.getStringExtra(EXTRA_PLAN_SOURCE) ?: "")
             }.getOrNull() ?: TimerPlanSource.INTERVAL
@@ -427,7 +434,8 @@ class TimerService : Service() {
                         ?.takeIf { it.isNotBlank() }
                         ?.let { name ->
                             runCatching { RepExercise.valueOf(name) }.getOrNull()
-                        }
+                        },
+                    captureMode = SetCaptureMode.fromName(captureModes?.getOrNull(index))
                 )
             }
             if (steps.isEmpty()) return null

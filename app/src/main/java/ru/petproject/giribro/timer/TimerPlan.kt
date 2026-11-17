@@ -1,5 +1,6 @@
 package ru.petproject.giribro.timer
 
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.Workout
 import ru.petproject.giribro.vision.RepExercise
@@ -16,8 +17,11 @@ enum class TimerStepKind { PREP, WORK, REST }
  * [manual] — подход без заданного времени: таймер ждёт нажатия «Выполнено»,
  * а [task] показывает задание (вес и повторы).
  *
- * [countReps] — этот подход пользователь выбрал для съёмки камерой,
+ * [countReps] — для этого подхода доступен ручной вход в счётчик,
  * [exercise] задаёт, какое упражнение считать.
+ *
+ * [captureMode] — выбранный пользователем режим подхода: при `RECORD` или `COUNT`
+ * камера открывается автоматически в начале рабочего отрезка.
  */
 data class TimerStep(
     val kind: TimerStepKind,
@@ -28,7 +32,8 @@ data class TimerStep(
     val manual: Boolean = false,
     val task: String = "",
     val countReps: Boolean = false,
-    val exercise: RepExercise? = null
+    val exercise: RepExercise? = null,
+    val captureMode: SetCaptureMode = SetCaptureMode.NONE
 ) {
     val phase: TimerPhase
         get() = when (kind) {
@@ -124,7 +129,8 @@ fun Workout.toTimerPlan(prepSec: Int = 15): TimerPlan {
                 manual = manual,
                 task = set.taskLabel(),
                 countReps = exercise != null,
-                exercise = exercise
+                exercise = exercise,
+                captureMode = set.captureMode
             )
             if (completedWork < totalWork && set.restSec > 0) {
                 steps += TimerStep(

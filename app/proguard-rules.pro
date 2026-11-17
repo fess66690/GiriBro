@@ -11,6 +11,7 @@
 -keep class ru.petproject.giribro.timer.TimerStepKind { *; }
 -keep class ru.petproject.giribro.vision.FixationPreset { *; }
 -keep class ru.petproject.giribro.vision.RepExercise { *; }
+-keep class ru.petproject.giribro.data.SetCaptureMode { *; }
 
 # MediaPipe обращается к Java-классам из нативных библиотек по именам JNI.
 # Переименование или удаление этих классов ломает распознавание позы.

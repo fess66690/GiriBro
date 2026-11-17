@@ -1,17 +1,28 @@
 package ru.petproject.giribro.ui.screens
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.ParcelFileDescriptor
+import android.util.Log
 import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCase
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FileDescriptorOutputOptions
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
+import androidx.documentfile.provider.DocumentFile
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +61,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +70,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -70,24 +83,142 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import ru.petproject.giribro.GiriBroApp
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.vision.FixationPreset
 import ru.petproject.giribro.vision.PoseFrame
 import ru.petproject.giribro.vision.PoseIndex
 import ru.petproject.giribro.vision.RepExercise
 import ru.petproject.giribro.vision.Side
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.min
+
+private const val TAG = "GiriBroCAM"
 
 @Composable
 fun CameraRepScreen(
     onBack: () -> Unit,
     initialExercise: RepExercise? = null,
-    initialPreset: FixationPreset? = null
+    initialPreset: FixationPreset? = null,
+    initialCaptureMode: SetCaptureMode = SetCaptureMode.NONE,
+    initialDurationSec: Int = 0
 ) {
     val vm: CameraRepViewModel = viewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val settingsRepository = remember(context.applicationContext) {
+        (context.applicationContext as GiriBroApp).settings
+    }
+
+    var videoFolderUri by remember {
+        mutableStateOf(
+            settingsRepository.videoFolderUri?.let { stored ->
+                runCatching { Uri.parse(stored) }.getOrNull()
+            }
+        )
+    }
+    var isRecording by remember { mutableStateOf(false) }
+    var activeRecording by remember { mutableStateOf<Recording?>(null) }
+    var videoStatus by remember { mutableStateOf<String?>(null) }
+    var cameraReady by remember { mutableStateOf(false) }
+    val recorder = remember { Recorder.Builder().build() }
+    val videoCapture = remember { VideoCapture.withOutput(recorder) }
+    val currentRecording = rememberUpdatedState(activeRecording)
+
+    val folderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            context.contentResolver.takePersistableUriPermission(uri, flags)
+            settingsRepository.videoFolderUri = uri.toString()
+            videoFolderUri = uri
+            videoStatus = "Папка для видео выбрана"
+        }.onFailure { error ->
+            Log.e(TAG, "Не удалось сохранить доступ к папке видео", error)
+            videoStatus = "Не удалось выбрать папку: ${error.message.orEmpty()}"
+        }
+    }
+
+    fun startVideoRecording() {
+        if (isRecording || activeRecording != null) return
+        val folder = videoFolderUri
+        if (folder == null) {
+            videoStatus = "Сначала выберите папку для видео"
+            return
+        }
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val fileName = "GiriBro_${state.exercise.name}_$stamp.mp4"
+        val document = runCatching {
+            DocumentFile.fromTreeUri(context, folder)?.createFile("video/mp4", fileName)
+        }.onFailure { error ->
+            Log.e(TAG, "Не удалось создать файл видео", error)
+        }.getOrNull()
+        if (document == null) {
+            videoStatus = "Не удалось создать файл в выбранной папке"
+            return
+        }
+        val descriptor: ParcelFileDescriptor = runCatching {
+            context.contentResolver.openFileDescriptor(document.uri, "w")
+        }.getOrNull() ?: run {
+            videoStatus = "Нет доступа к файлу видео"
+            return
+        }
+        try {
+            val options = FileDescriptorOutputOptions.Builder(descriptor).build()
+            activeRecording = recorder.prepareRecording(context, options)
+                .start(ContextCompat.getMainExecutor(context)) { event ->
+                    when (event) {
+                        is VideoRecordEvent.Start -> {
+                            isRecording = true
+                            videoStatus = null
+                        }
+                        is VideoRecordEvent.Finalize -> {
+                            isRecording = false
+                            activeRecording = null
+                            runCatching { descriptor.close() }
+                            videoStatus = if (event.hasError()) {
+                                Log.e(
+                                    TAG,
+                                    "Ошибка записи видео, код ${event.error}",
+                                    event.cause
+                                )
+                                "Не удалось сохранить видео (код ${event.error})"
+                            } else {
+                                "Видео сохранено: $fileName"
+                            }
+                        }
+                    }
+                }
+        } catch (error: Throwable) {
+            runCatching { descriptor.close() }
+            Log.e(TAG, "Не удалось начать запись видео", error)
+            videoStatus = "Не удалось начать запись: ${error.message.orEmpty()}"
+        }
+    }
+
+    fun stopVideoRecording() {
+        activeRecording?.stop()
+    }
+
+    LaunchedEffect(cameraReady, state.running, state.captureMode) {
+        if (!cameraReady) return@LaunchedEffect
+        if (state.captureMode == SetCaptureMode.RECORD && state.running) {
+            startVideoRecording()
+        } else if (!state.running && activeRecording != null) {
+            stopVideoRecording()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { currentRecording.value?.stop() }
+    }
 
     LaunchedEffect(initialExercise) {
         if (initialExercise != null) vm.setExercise(initialExercise)
@@ -95,6 +226,12 @@ fun CameraRepScreen(
 
     LaunchedEffect(initialPreset) {
         if (initialPreset != null) vm.setPreset(initialPreset)
+    }
+
+    LaunchedEffect(initialCaptureMode, initialDurationSec) {
+        if (initialCaptureMode != SetCaptureMode.NONE) {
+            vm.startSet(initialCaptureMode, initialDurationSec)
+        }
     }
 
     var hasPermission by remember {
@@ -128,6 +265,9 @@ fun CameraRepScreen(
             CameraRepHeader(
                 exercise = state.exercise,
                 preset = state.preset,
+                captureMode = state.captureMode,
+                durationSec = state.setDurationSec,
+                remainingSec = state.setRemainingSec,
                 onBack = onBack
             )
         }
@@ -138,8 +278,24 @@ fun CameraRepScreen(
                 hasPermission = hasPermission,
                 showRationale = showRationale,
                 onRequestPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+                onCameraReady = { cameraReady = it },
+                videoCapture = videoCapture,
                 vm = vm
             )
+        }
+
+        if (state.captureMode == SetCaptureMode.RECORD) {
+            item {
+                VideoCard(
+                    folderUri = videoFolderUri,
+                    isRecording = isRecording,
+                    status = videoStatus,
+                    onPickFolder = { folderPicker.launch(null) },
+                    onToggleRecording = {
+                        if (isRecording) stopVideoRecording() else startVideoRecording()
+                    }
+                )
+            }
         }
 
         item {
@@ -230,8 +386,13 @@ fun CameraRepScreen(
 
         item {
             Text(
-                text = "Счёт тренировочный и не заменяет судью. Видео не записывается " +
-                    "и не отправляется: кадры обрабатываются на устройстве.",
+                text = if (state.captureMode == SetCaptureMode.RECORD) {
+                    "Счёт тренировочный и не заменяет судью. Видео сохраняется только " +
+                        "в выбранную вами папку и никуда не отправляется."
+                } else {
+                    "Счёт тренировочный и не заменяет судью. Видео не записывается " +
+                        "и не отправляется: кадры обрабатываются на устройстве."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -243,6 +404,9 @@ fun CameraRepScreen(
 private fun CameraRepHeader(
     exercise: RepExercise,
     preset: FixationPreset,
+    captureMode: SetCaptureMode,
+    durationSec: Int,
+    remainingSec: Int,
     onBack: () -> Unit
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -259,7 +423,17 @@ private fun CameraRepHeader(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "${exercise.label} · ${preset.label.lowercase()}",
+                text = buildString {
+                    append(exercise.label).append(" · ").append(preset.label.lowercase())
+                    if (captureMode != SetCaptureMode.NONE) {
+                        append(" · ").append(
+                            if (captureMode == SetCaptureMode.RECORD) "Запись" else "Счёт"
+                        )
+                    }
+                    if (captureMode != SetCaptureMode.NONE && durationSec > 0) {
+                        append(" · ").append(remainingSec).append(" с")
+                    }
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -273,6 +447,8 @@ private fun CameraCard(
     hasPermission: Boolean,
     showRationale: Boolean,
     onRequestPermission: () -> Unit,
+    onCameraReady: (Boolean) -> Unit,
+    videoCapture: VideoCapture<Recorder>,
     vm: CameraRepViewModel
 ) {
     val context = LocalContext.current
@@ -290,8 +466,11 @@ private fun CameraCard(
         if (hasPermission) vm.poseAnalyzer() else null
     }
 
-    LaunchedEffect(hasPermission, analyzer) {
-        if (!hasPermission || analyzer == null) return@LaunchedEffect
+    LaunchedEffect(hasPermission, analyzer, state.captureMode) {
+        if (!hasPermission || analyzer == null) {
+            onCameraReady(false)
+            return@LaunchedEffect
+        }
         val providerFuture = ProcessCameraProvider.getInstance(context)
         providerFuture.addListener({
             try {
@@ -314,22 +493,33 @@ private fun CameraCard(
                     )
                     .build()
                     .also { it.setAnalyzer(analysisExecutor, analyzer) }
+                val useCases = mutableListOf<UseCase>(preview, analysis)
+                if (state.captureMode == SetCaptureMode.RECORD) {
+                    useCases += videoCapture
+                }
                 provider.unbindAll()
                 provider.bindToLifecycle(
                     lifecycleOwner,
                     CameraSelector.DEFAULT_FRONT_CAMERA,
-                    preview,
-                    analysis
+                    *useCases.toTypedArray()
                 )
                 cameraError = null
+                onCameraReady(true)
             } catch (error: Throwable) {
-                cameraError = error.message ?: "Не удалось открыть камеру"
+                onCameraReady(false)
+                Log.e(TAG, "Не удалось открыть камеру", error)
+                cameraError = buildString {
+                    append("Не удалось открыть камеру: ").append(error.javaClass.name)
+                    error.message?.let { append(": ").append(it) }
+                    error.cause?.let { append("\n← ").append(it.javaClass.name) }
+                }
             }
         }, ContextCompat.getMainExecutor(context))
     }
 
     DisposableEffect(Unit) {
         onDispose {
+            onCameraReady(false)
             analysisExecutor.shutdown()
         }
     }
@@ -340,11 +530,20 @@ private fun CameraCard(
     val lineWidth = with(density) { 2.dp.toPx() }
     val jointRadius = with(density) { 3.5.dp.toPx() }
     val wristRadius = with(density) { 6.dp.toPx() }
+    val captureMode = state.captureMode
+    val previewHeight = if (captureMode != SetCaptureMode.NONE) {
+        (LocalConfiguration.current.screenHeightDp * 0.62f).dp
+    } else {
+        null
+    }
 
     Box(
         Modifier
             .fillMaxWidth()
-            .aspectRatio(3f / 4f)
+            .then(
+                if (previewHeight != null) Modifier.height(previewHeight)
+                else Modifier.aspectRatio(3f / 4f)
+            )
             .clip(RoundedCornerShape(24.dp))
             .background(Color.Black)
     ) {
@@ -393,11 +592,70 @@ private fun CameraCard(
         } else {
             PermissionCard(
                 showRationale = showRationale,
+                captureMode = captureMode,
                 onRequestPermission = onRequestPermission,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(24.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun VideoCard(
+    folderUri: Uri?,
+    isRecording: Boolean,
+    status: String?,
+    onPickFolder: () -> Unit,
+    onToggleRecording: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Видео подхода", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = if (folderUri == null) {
+                    "Папка для видео не выбрана"
+                } else {
+                    "Папка для видео выбрана"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (status != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (status.startsWith("Не удалось")) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onPickFolder, modifier = Modifier.weight(1f)) {
+                    Text("Папка")
+                }
+                Button(
+                    onClick = onToggleRecording,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isRecording) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        }
+                    )
+                ) {
+                    Text(if (isRecording) "Стоп" else "Запись")
+                }
+            }
         }
     }
 }
@@ -454,6 +712,7 @@ private fun StatusBadge(
 @Composable
 private fun PermissionCard(
     showRationale: Boolean,
+    captureMode: SetCaptureMode,
     onRequestPermission: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -479,12 +738,18 @@ private fun PermissionCard(
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = if (showRationale) {
-                    "Без доступа к камере счётчик не работает. Разрешите камеру в настройках " +
-                        "приложения — видео при этом не записывается."
-                } else {
-                    "Камера нужна, чтобы считать повторы по скелету. Видео не записывается " +
-                        "и не отправляется."
+                text = buildString {
+                    if (showRationale) {
+                        append("Без доступа к камере счётчик не работает. Разрешите камеру ")
+                        append("в настройках приложения. ")
+                    } else {
+                        append("Камера нужна, чтобы считать повторы по скелету. ")
+                    }
+                    if (captureMode == SetCaptureMode.RECORD) {
+                        append("Видео сохраняется только в выбранную вами папку.")
+                    } else {
+                        append("Видео не записывается и не отправляется.")
+                    }
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

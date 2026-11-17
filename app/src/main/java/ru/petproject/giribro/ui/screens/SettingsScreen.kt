@@ -228,7 +228,8 @@ fun SettingsScreen(
             SettingsCard("Счётчик повторов по камере") {
                 Text(
                     "Фронтальная камера считает толчок, длинный цикл и рывок по скелету. " +
-                        "Видео не записывается и не отправляется.",
+                        "В режиме подхода «Запись» видео сохраняется только в выбранную " +
+                        "вами папку; в режиме «Счёт» видео не записывается.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

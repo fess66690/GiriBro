@@ -9,6 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.petproject.giribro.data.Section
 import ru.petproject.giribro.data.SectionType
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.Workout
 import ru.petproject.giribro.data.WorkoutValidator
@@ -79,6 +80,33 @@ class NewWorkoutViewModelTest {
         assertEquals(
             SetEntry.MAX_REST_SEC,
             vm.draft.value.sections.single().sets.first().restSec
+        )
+    }
+
+    @Test
+    fun `capture mode is changed for one set and replaces previous mode`() {
+        val vm = NewWorkoutViewModel()
+        vm.load(source)
+        val key = vm.draft.value.sections.single().key
+
+        vm.setCaptureMode(key, 0, SetCaptureMode.RECORD)
+        assertEquals(
+            SetCaptureMode.RECORD,
+            vm.draft.value.sections.single().sets[0].captureMode
+        )
+        assertEquals(
+            SetCaptureMode.NONE,
+            vm.draft.value.sections.single().sets[1].captureMode
+        )
+
+        vm.setCaptureMode(key, 0, SetCaptureMode.COUNT)
+        assertEquals(
+            SetCaptureMode.COUNT,
+            vm.toWorkout().sections.single().sets[0].captureMode
+        )
+        assertEquals(
+            SetCaptureMode.NONE,
+            vm.draft.value.sections.single().sets[1].captureMode
         )
     }
 

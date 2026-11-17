@@ -5,6 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.petproject.giribro.data.Section
 import ru.petproject.giribro.data.SectionType
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.Workout
 import ru.petproject.giribro.timer.TimerConfig
@@ -197,6 +198,26 @@ class TimerPlanTest {
                 ru.petproject.giribro.vision.RepExercise.SNATCH
             ),
             works.map { it.exercise }
+        )
+    }
+
+    @Test
+    fun `workout keeps capture mode of every set`() {
+        val plan = workout(
+            Section(
+                SectionType.JERK,
+                listOf(
+                    SetEntry(24, 20, 60, captureMode = SetCaptureMode.RECORD),
+                    SetEntry(24, 15, 60, captureMode = SetCaptureMode.COUNT)
+                )
+            ),
+            Section(SectionType.GPP, listOf(SetEntry(0, 20, 60)))
+        ).toTimerPlan(prepSec = 0)
+
+        val works = plan.steps.filter { it.kind == TimerStepKind.WORK }
+        assertEquals(
+            listOf(SetCaptureMode.RECORD, SetCaptureMode.COUNT, SetCaptureMode.NONE),
+            works.map { it.captureMode }
         )
     }
 

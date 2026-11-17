@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.timer.TimerConfig
 import ru.petproject.giribro.timer.TimerPhase
 import ru.petproject.giribro.timer.TimerService
@@ -59,7 +60,8 @@ import ru.petproject.giribro.vision.RepExercise
 @Composable
 fun TimerScreen(
     onBack: () -> Unit = {},
-    onOpenCounter: ((RepExercise) -> Unit)? = null
+    onOpenCounter: ((RepExercise) -> Unit)? = null,
+    onAutoOpenCamera: ((RepExercise, SetCaptureMode, Int) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val state by TimerService.state.collectAsStateWithLifecycle()
@@ -127,7 +129,8 @@ fun TimerScreen(
                     ).show()
                 }
             },
-            onOpenCounter = onOpenCounter
+            onOpenCounter = onOpenCounter,
+            onAutoOpenCamera = onAutoOpenCamera
         )
         return
     }

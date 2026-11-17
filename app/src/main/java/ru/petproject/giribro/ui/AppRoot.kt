@@ -33,6 +33,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import kotlinx.coroutines.flow.collect
 import ru.petproject.giribro.AppViewModel
+import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.timer.TimerPhase
 import ru.petproject.giribro.timer.TimerService
 import ru.petproject.giribro.vision.RepExercise
@@ -60,6 +61,15 @@ private val bottomItems = listOf(
 )
 
 private val profileRoutes = setOf("profile", "body", "norms", "settings")
+
+private fun cameraRepRoute(
+    exercise: RepExercise?,
+    mode: SetCaptureMode = SetCaptureMode.NONE,
+    durationSec: Int = 0
+): String {
+    val exerciseArg = exercise?.name.orEmpty()
+    return "camera-rep?exercise=$exerciseArg&mode=${mode.name}&duration=$durationSec"
+}
 
 @Composable
 fun AppRoot(
@@ -190,7 +200,10 @@ fun AppRoot(
                             }
                         },
                         onOpenCounter = { exercise ->
-                            navController.navigate("camera-rep?exercise=${exercise.name}")
+                            navController.navigate(cameraRepRoute(exercise))
+                        },
+                        onAutoOpenCamera = { exercise, mode, durationSec ->
+                            navController.navigate(cameraRepRoute(exercise, mode, durationSec))
                         }
                     )
                 }
@@ -202,21 +215,32 @@ fun AppRoot(
                     )
                 }
                 composable(
-                    route = "camera-rep?exercise={exercise}",
+                    route = "camera-rep?exercise={exercise}&mode={mode}&duration={duration}",
                     arguments = listOf(
                         navArgument("exercise") {
                             type = NavType.StringType
                             defaultValue = ""
+                        },
+                        navArgument("mode") {
+                            type = NavType.StringType
+                            defaultValue = SetCaptureMode.NONE.name
+                        },
+                        navArgument("duration") {
+                            type = NavType.IntType
+                            defaultValue = 0
                         }
                     )
                 ) { entry ->
                     val exercise = runCatching {
                         RepExercise.valueOf(entry.arguments?.getString("exercise").orEmpty())
                     }.getOrNull()
+                    val mode = SetCaptureMode.fromName(entry.arguments?.getString("mode"))
                     CameraRepScreen(
                         onBack = { navController.popBackStack() },
                         initialExercise = exercise,
-                        initialPreset = settings.fixationPreset
+                        initialPreset = settings.fixationPreset,
+                        initialCaptureMode = mode,
+                        initialDurationSec = entry.arguments?.getInt("duration") ?: 0
                     )
                 }
                 composable(
@@ -254,7 +278,10 @@ fun AppRoot(
                         },
                         onClose = { navController.popBackStack() },
                         onOpenCounter = { exercise ->
-                            navController.navigate("camera-rep?exercise=${exercise.name}")
+                            navController.navigate(cameraRepRoute(exercise))
+                        },
+                        onAutoOpenCamera = { exercise, mode, durationSec ->
+                            navController.navigate(cameraRepRoute(exercise, mode, durationSec))
                         }
                     )
                 }

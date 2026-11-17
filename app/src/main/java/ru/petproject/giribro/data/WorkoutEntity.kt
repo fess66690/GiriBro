@@ -21,14 +21,17 @@ object WorkoutJson {
         sections.forEach { section ->
             val sets = JSONArray()
             section.sets.forEach { entry ->
-                sets.put(
-                    JSONObject()
-                        .put("w", entry.weightKg)
-                        .put("r", entry.reps)
-                        .put("d", entry.durationSec)
-                        // Отдых после конкретного подхода — так разные паузы сохраняются.
-                        .put("rest", entry.restSec.coerceIn(0, SetEntry.MAX_REST_SEC))
-                )
+                val setJson = JSONObject()
+                    .put("w", entry.weightKg)
+                    .put("r", entry.reps)
+                    .put("d", entry.durationSec)
+                    // Отдых после конкретного подхода — так разные паузы сохраняются.
+                    .put("rest", entry.restSec.coerceIn(0, SetEntry.MAX_REST_SEC))
+                // Старые копии не должны разрастаться лишними полями.
+                if (entry.captureMode != SetCaptureMode.NONE) {
+                    setJson.put("cm", entry.captureMode.name)
+                }
+                sets.put(setJson)
             }
             root.put(
                 JSONObject()
@@ -82,7 +85,8 @@ object WorkoutJson {
                                 reps = set.optInt("r"),
                                 durationSec = set.optInt("d", 0),
                                 restSec = set.optInt("rest", legacyRest)
-                                    .coerceIn(0, SetEntry.MAX_REST_SEC)
+                                    .coerceIn(0, SetEntry.MAX_REST_SEC),
+                                captureMode = SetCaptureMode.fromName(set.optString("cm"))
                             )
                         )
                     }
