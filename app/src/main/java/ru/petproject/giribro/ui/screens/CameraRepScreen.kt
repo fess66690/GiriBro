@@ -318,6 +318,22 @@ fun CameraRepScreen(
                     )
                 }
             }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = when (state.exercise) {
+                    RepExercise.JERK ->
+                        "Толчок: повтор только в полном замке — кисти выше головы, локти прямые."
+
+                    RepExercise.LONG_CYCLE ->
+                        "ДЦ: замок → сброс в вис → заброс на грудь. Следующий повтор " +
+                            "считается только после виса."
+
+                    RepExercise.SNATCH ->
+                        "Рывок: руки поочерёдно. Пока одна вверху, вторая не считается."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         item {
@@ -338,7 +354,12 @@ fun CameraRepScreen(
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                state.preset.hint,
+                text = if (state.exercise == RepExercise.LONG_CYCLE) {
+                    "В ДЦ замок подтверждается коротко (${state.fixationSec} с): " +
+                        "гири сразу уходят в вис."
+                } else {
+                    state.preset.hint
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -778,10 +799,10 @@ private fun FixationCard(state: CameraRepUiState) {
                 Text("Фиксация", style = MaterialTheme.typography.titleSmall)
                 Text(
                     text = if (state.fixationProgress > 0f) {
-                        "${(state.fixationProgress * state.preset.seconds).coerceAtMost(state.preset.seconds)
-                            .let { "%.1f".format(it) }} / ${state.preset.seconds} с"
+                        "${(state.fixationProgress * state.fixationSec).coerceAtMost(state.fixationSec)
+                            .let { "%.1f".format(it) }} / ${state.fixationSec} с"
                     } else {
-                        "ждём верхнюю точку"
+                        "ждём полный замок"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

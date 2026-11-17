@@ -1,12 +1,16 @@
 package ru.petproject.giribro.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -21,8 +25,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -50,12 +57,14 @@ import ru.petproject.giribro.ui.screens.TimerScreen
 private data class BottomItem(
     val route: String,
     val label: String,
-    val icon: ImageVector
+    val icon: ImageVector,
+    val accent: Boolean = false
 )
 
 private val bottomItems = listOf(
     BottomItem("diary", "Дневник", Icons.Outlined.FitnessCenter),
     BottomItem("stats", "Статистика", Icons.Outlined.Insights),
+    BottomItem("camera-rep", "Счётчик", Icons.Outlined.PhotoCamera, accent = true),
     BottomItem("timer", "Таймер", Icons.Outlined.Timer),
     BottomItem("profile", "Профиль", Icons.Outlined.Person)
 )
@@ -110,7 +119,7 @@ fun AppRoot(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            if (baseRoute != "new" && baseRoute != "camera-rep" && !timerFullScreen) {
+            if (baseRoute != "new" && !timerFullScreen) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     bottomItems.forEach { item ->
                         NavigationBarItem(
@@ -120,8 +129,13 @@ fun AppRoot(
                                 baseRoute == item.route
                             },
                             onClick = {
+                                val target = if (item.route == "camera-rep") {
+                                    cameraRepRoute(null)
+                                } else {
+                                    item.route
+                                }
                                 if (baseRoute != item.route) {
-                                    navController.navigate(item.route) {
+                                    navController.navigate(target) {
                                         popUpTo(navController.graph.findStartDestination().id) {
                                             saveState = true
                                         }
@@ -131,7 +145,24 @@ fun AppRoot(
                                 }
                             },
                             icon = {
-                                Icon(item.icon, contentDescription = item.label)
+                                if (item.accent) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            item.icon,
+                                            contentDescription = item.label,
+                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                } else {
+                                    Icon(item.icon, contentDescription = item.label)
+                                }
                             },
                             label = { Text(item.label) }
                         )
@@ -211,7 +242,7 @@ fun AppRoot(
                     SettingsScreen(
                         vm = vm,
                         onBack = { navController.popBackStack() },
-                        onOpenCameraCount = { navController.navigate("camera-rep") }
+                        onOpenCameraCount = { navController.navigate(cameraRepRoute(null)) }
                     )
                 }
                 composable(

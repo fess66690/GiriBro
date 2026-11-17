@@ -36,6 +36,8 @@ data class CameraRepUiState(
     val tracking: Boolean = false,
     val activeSides: Set<Side> = emptySet(),
     val elapsedMs: Long = 0L,
+    /** Фактическое время подтверждения замка (в ДЦ короче выбранного порога). */
+    val fixationSec: Float = FixationPreset.COMPETITION.seconds,
     val lastFixationSec: Float = 0f,
     val lastRepConfident: Boolean = true,
     val frame: PoseFrame? = null,
@@ -83,6 +85,7 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         counter = RepCounter(ExerciseProfile.of(exercise, _state.value.preset))
         _state.value = _state.value.copy(
             exercise = exercise,
+            fixationSec = counter.profile.effectiveFixationSec,
             total = 0,
             left = 0,
             right = 0,
@@ -99,6 +102,7 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         counter = RepCounter(ExerciseProfile.of(_state.value.exercise, preset))
         _state.value = _state.value.copy(
             preset = preset,
+            fixationSec = counter.profile.effectiveFixationSec,
             total = 0,
             left = 0,
             right = 0,

@@ -37,15 +37,17 @@ data class RepUpdate(
  * Конечный автомат подсчёта повторов. Не знает ни про Android, ни про камеру:
  * на вход идут кадры скелета, на выход — события и снимок состояния.
  *
- * Логика на каждую руку:
+ * Верхняя точка — это **полный замок**: кисть выше головы и локоть почти
+ * прямой. Просто «кисть чуть выше плеча» больше не считается: именно из-за
+ * такого порога толчок срабатывал в середине подъёма.
  *
- * ```
- * низ → подъём → фиксация (удержание) → повтор → выход вниз
- * ```
- *
- * Повтор засчитывается только после удержания в верхней точке не меньше
- * [ExerciseProfile.fixationSec]. Между повторами выдерживается пауза, а после
- * счётчика рука должна реально уйти вниз — это защита от дребезга.
+ * Дальше поведение зависит от техники:
+ * - [RepTechnique.LOCKOUT] — ждём выбранный порог фиксации, следующий повтор
+ *   после ухода рук вниз;
+ * - [RepTechnique.FULL_CYCLE] — короткое подтверждение замка, следующий
+ *   повтор только после того, как гири вернулись в вис;
+ * - [RepTechnique.ALTERNATING] — руки поочерёдно, вторая заблокирована, пока
+ *   первая не опустится.
  */
 class RepCounter(profile: ExerciseProfile) {
 
@@ -63,6 +65,10 @@ class RepCounter(profile: ExerciseProfile) {
     private val shared = SideState()
     private val left = SideState()
     private val right = SideState()
+
+    /** Рука, которая сейчас «держит» рывок; вторая в это время не считается. */
+    private var lockedSide: Side? = null
+    private var lockDownSince = 0L
 
     private var totalCount = 0
     private var leftCount = 0
@@ -86,6 +92,8 @@ class RepCounter(profile: ExerciseProfile) {
         shared.reset()
         left.reset()
         right.reset()
+        lockedSide = null
+        lockDownSince = 0L
         totalCount = 0
         leftCount = 0
         rightCount = 0
@@ -128,6 +136,12 @@ class RepCounter(profile: ExerciseProfile) {
                     events = events
                 )
             }
+            // В длинном цикле новую фиксацию разрешаем только из виса.
+            val canRearm = if (profile.rearmRequiresHang) {
+                listOfNotNull(leftEval, rightEval).all { it.hang }
+            } else {
+                true
+            }
             val confident = bothVisible
             updateState(
                 state = shared,
@@ -135,7 +149,8 @@ class RepCounter(profile: ExerciseProfile) {
                 now = now,
                 side = Side.BOTH,
                 confident = confident,
-                events = events
+                events = events,
+                canRearm = canRearm
             )
             progress = stateProgress(shared, now)
             if (top || shared.inTop) activeSides.add(Side.BOTH)
@@ -143,25 +158,35 @@ class RepCounter(profile: ExerciseProfile) {
             val evaluations = listOfNotNull(
                 evaluateSide(frame, torsoLength, torso, Side.LEFT)?.let { Side.LEFT to it },
                 evaluateSide(frame, torsoLength, torso, Side.RIGHT)?.let { Side.RIGHT to it }
-            )
+            ).toMap()
+
             if (evaluations.isEmpty()) {
+                lockedSide = null
+                lockDownSince = 0L
                 return finish(
                     snapshot = snapshot(tracking = false),
                     events = events
                 )
             }
-            evaluations.forEach { (side, evaluation) ->
-                val state = if (side == Side.LEFT) left else right
-                updateState(
-                    state = state,
-                    top = evaluation.top,
-                    now = now,
-                    side = side,
-                    confident = true,
-                    events = events
-                )
-                progress = max(progress, stateProgress(state, now))
-                if (evaluation.top || state.inTop) activeSides.add(side)
+
+            if (profile.alternateSides) {
+                updateAlternating(evaluations, now, events, activeSides) { p ->
+                    progress = max(progress, p)
+                }
+            } else {
+                evaluations.forEach { (side, evaluation) ->
+                    val state = if (side == Side.LEFT) left else right
+                    updateState(
+                        state = state,
+                        top = evaluation.top,
+                        now = now,
+                        side = side,
+                        confident = true,
+                        events = events
+                    )
+                    progress = max(progress, stateProgress(state, now))
+                    if (evaluation.top || state.inTop) activeSides.add(side)
+                }
             }
         }
 
@@ -173,6 +198,75 @@ class RepCounter(profile: ExerciseProfile) {
             ),
             events = events
         )
+    }
+
+    /**
+     * Рывок: выбираем одну «рабочую» руку и глушим вторую, пока рабочая не
+     * опустится вниз. Так одиночный подъём не превращается в два повтора.
+     */
+    private fun updateAlternating(
+        evaluations: Map<Side, SideEvaluation>,
+        now: Long,
+        events: MutableList<RepEvent>,
+        activeSides: MutableSet<Side>,
+        onProgress: (Float) -> Unit
+    ) {
+        var primary = lockedSide
+
+        if (primary != null) {
+            val primaryEval = evaluations[primary]
+            when {
+                primaryEval == null -> {
+                    // Рабочая рука пропала из кадра — снимаем блокировку.
+                    lockedSide = null
+                    lockDownSince = 0L
+                    primary = null
+                }
+
+                !primaryEval.top && primaryEval.hang -> {
+                    if (lockDownSince == 0L) lockDownSince = now
+                    if (now - lockDownSince >= profile.releaseMs) {
+                        lockedSide = null
+                        lockDownSince = 0L
+                        primary = null
+                    }
+                }
+
+                else -> lockDownSince = 0L
+            }
+        }
+
+        if (primary == null) {
+            val raised = evaluations.filter { it.value.top }.keys
+            primary = when {
+                raised.size == 1 -> raised.first()
+                raised.size > 1 -> raised.maxBy { evaluations.getValue(it).riseRatio }
+                else -> null
+            }
+            if (primary != null) {
+                lockedSide = primary
+                lockDownSince = 0L
+            }
+        }
+
+        evaluations.forEach { (side, evaluation) ->
+            val state = if (side == Side.LEFT) left else right
+            val isPrimary = side == primary
+            updateState(
+                state = state,
+                top = isPrimary && evaluation.top,
+                now = now,
+                side = side,
+                confident = isPrimary,
+                events = events,
+                canRearm = isPrimary || evaluation.hang,
+                emitShort = isPrimary
+            )
+            if (isPrimary) {
+                onProgress(stateProgress(state, now))
+                if (evaluation.top || state.inTop) activeSides.add(side)
+            }
+        }
     }
 
     private fun finish(snapshot: RepSnapshot, events: List<RepEvent>): RepUpdate {
@@ -261,12 +355,14 @@ class RepCounter(profile: ExerciseProfile) {
         now: Long,
         side: Side,
         confident: Boolean,
-        events: MutableList<RepEvent>
+        events: MutableList<RepEvent>,
+        canRearm: Boolean = true,
+        emitShort: Boolean = true
     ) {
         if (top) {
             if (!state.inTop) {
                 // После паузы рука снова может набирать фиксацию.
-                if (!state.armed && now - state.lastTopAt >= profile.releaseMs) {
+                if (!state.armed && now - state.lastTopAt >= profile.releaseMs && canRearm) {
                     state.armed = true
                 }
                 state.inTop = true
@@ -275,7 +371,10 @@ class RepCounter(profile: ExerciseProfile) {
             state.lastTopAt = now
             val heldMs = now - state.topSince
             val sinceRep = now - state.lastRepAt
-            if (state.armed && heldMs >= profile.fixationMs && sinceRep >= profile.minRepIntervalMs) {
+            if (state.armed &&
+                heldMs >= profile.effectiveFixationMs &&
+                sinceRep >= profile.minRepIntervalMs
+            ) {
                 state.armed = false
                 state.lastRepAt = now
                 val heldSec = heldMs / 1000f
@@ -309,7 +408,7 @@ class RepCounter(profile: ExerciseProfile) {
         } else {
             if (state.inTop && now - state.lastTopAt >= profile.topGraceMs) {
                 val heldMs = state.lastTopAt - state.topSince
-                if (state.armed && heldMs >= MIN_SHORT_FIXATION_MS) {
+                if (emitShort && state.armed && heldMs >= MIN_SHORT_FIXATION_MS) {
                     shortCount++
                     events += RepEvent.ShortFixation(
                         side = side,
@@ -319,7 +418,9 @@ class RepCounter(profile: ExerciseProfile) {
                 state.inTop = false
                 state.topSince = 0L
             }
-            if (!state.inTop && !state.armed && now - state.lastTopAt >= profile.releaseMs) {
+            if (!state.inTop && !state.armed && canRearm &&
+                now - state.lastTopAt >= profile.releaseMs
+            ) {
                 state.armed = true
             }
         }
@@ -328,7 +429,7 @@ class RepCounter(profile: ExerciseProfile) {
     private fun stateProgress(state: SideState, now: Long): Float {
         if (!state.inTop) return 0f
         if (!state.armed) return 1f
-        return ((now - state.topSince).toFloat() / profile.fixationMs).coerceIn(0f, 1f)
+        return ((now - state.topSince).toFloat() / profile.effectiveFixationMs).coerceIn(0f, 1f)
     }
 
     private fun snapshot(
@@ -353,6 +454,7 @@ class RepCounter(profile: ExerciseProfile) {
 
     private data class SideEvaluation(
         val top: Boolean,
+        val hang: Boolean,
         val elbowDeg: Float,
         val riseRatio: Float
     )
@@ -402,12 +504,22 @@ class RepCounter(profile: ExerciseProfile) {
         // Отрицательная разница означает, что кисть ниже плеча.
         val rise = shoulder.y - wrist.y
         val riseRatio = rise / torsoLength
-        val wristHighEnough = riseRatio >= profile.wristAboveShoulderRatio
+
+        // Полный замок: кисть выше головы. Если голова не видна — резервный
+        // порог в долях корпуса, но он теперь намного строже прежних 6 %.
+        val nose = frame.point(PoseIndex.NOSE)
+        val aboveHead = nose != null && wrist.y <= nose.y - HEAD_MARGIN
+        val wristHighEnough = aboveHead || riseRatio >= profile.wristAboveShoulderRatio
         val elbowStraight = elbowDeg >= profile.elbowStraightDeg
         val torsoOk = torso.tiltDeg <= profile.maxTorsoTiltDeg
 
+        // Вис: кисть заметно ниже плеча. Используется для ДЦ и для разблокировки
+        // второй руки в рывке.
+        val hang = wrist.y >= shoulder.y + HANG_MARGIN
+
         return SideEvaluation(
             top = wristHighEnough && elbowStraight && torsoOk,
+            hang = hang,
             elbowDeg = elbowDeg,
             riseRatio = riseRatio
         )
@@ -430,5 +542,9 @@ class RepCounter(profile: ExerciseProfile) {
 
     companion object {
         private const val MIN_SHORT_FIXATION_MS = 150L
+        /** Насколько кисть должна быть выше носа, чтобы считать замок. */
+        private const val HEAD_MARGIN = 0.01f
+        /** Насколько кисть должна быть ниже плеча, чтобы считать вис. */
+        private const val HANG_MARGIN = 0.05f
     }
 }

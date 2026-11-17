@@ -9,6 +9,7 @@ class RepCounterTest {
 
     private val competition = FixationPreset.COMPETITION
     private val jerk = ExerciseProfile.of(RepExercise.JERK, competition)
+    private val longCycle = ExerciseProfile.of(RepExercise.LONG_CYCLE, competition)
     private val snatch = ExerciseProfile.of(RepExercise.SNATCH, competition)
 
     @Test
@@ -26,6 +27,18 @@ class RepCounterTest {
         assertEquals(3, snapshot.left)
         assertEquals(3, snapshot.right)
         assertEquals(0, snapshot.shortFixations)
+    }
+
+    @Test
+    fun `jerk ignores mid amplitude`() {
+        val counter = RepCounter(jerk)
+        var now = 1_000L
+
+        // Кисти выше плеча, но ниже головы: раньше это считалось верхней точкой.
+        now = feedAt(counter, now, durationMs = 2_000, leftY = 0.20f, rightY = 0.20f)
+
+        assertEquals(0, counter.currentSnapshot().total)
+        assertEquals(0, counter.currentSnapshot().shortFixations)
     }
 
     @Test
@@ -57,6 +70,60 @@ class RepCounterTest {
         assertEquals(3, snapshot.total)
         assertEquals(2, snapshot.left)
         assertEquals(1, snapshot.right)
+    }
+
+    @Test
+    fun `snatch counts one rep when both hands rise together`() {
+        val counter = RepCounter(snatch)
+        var now = 1_000L
+
+        now = feedAt(counter, now, durationMs = 900, leftY = TOP_Y, rightY = TOP_Y)
+
+        val snapshot = counter.currentSnapshot()
+        assertEquals(1, snapshot.total)
+        assertEquals(1, snapshot.left + snapshot.right)
+    }
+
+    @Test
+    fun `snatch blocks idle hand until working hand descends`() {
+        val counter = RepCounter(snatch)
+        var now = 1_000L
+
+        // Левая работает, правая висит.
+        now = feedAt(counter, now, durationMs = 900, leftY = TOP_Y, rightY = HANG_Y)
+        assertEquals(1, counter.currentSnapshot().total)
+        assertEquals(1, counter.currentSnapshot().left)
+        assertEquals(0, counter.currentSnapshot().right)
+
+        // Правая поднялась, пока левая ещё вверху: второй повтор не должен появиться.
+        now = feedAt(counter, now, durationMs = 900, leftY = TOP_Y, rightY = TOP_Y)
+        assertEquals(1, counter.currentSnapshot().total)
+
+        // Левая ушла вниз, теперь может работать правая.
+        now = feedAt(counter, now, durationMs = 1_000, leftY = HANG_Y, rightY = HANG_Y)
+        now = feedAt(counter, now, durationMs = 900, leftY = HANG_Y, rightY = TOP_Y)
+        assertEquals(2, counter.currentSnapshot().total)
+        assertEquals(1, counter.currentSnapshot().right)
+    }
+
+    @Test
+    fun `long cycle counts only after returning to hang`() {
+        val counter = RepCounter(longCycle)
+        var now = 1_000L
+
+        // Замок — первый повтор. Подтверждение в ДЦ короткое.
+        now = feedAt(counter, now, durationMs = 400, leftY = TOP_Y, rightY = TOP_Y)
+        assertEquals(1, counter.currentSnapshot().total)
+
+        // Гири на груди: это не вис, поэтому новый повтор невозможен.
+        now = feedAt(counter, now, durationMs = 1_100, leftY = RACK_Y, rightY = RACK_Y)
+        now = feedAt(counter, now, durationMs = 400, leftY = TOP_Y, rightY = TOP_Y)
+        assertEquals(1, counter.currentSnapshot().total)
+
+        // Сброс в вис и новый цикл.
+        now = feedAt(counter, now, durationMs = 1_100, leftY = HANG_Y, rightY = HANG_Y)
+        now = feedAt(counter, now, durationMs = 400, leftY = TOP_Y, rightY = TOP_Y)
+        assertEquals(2, counter.currentSnapshot().total)
     }
 
     @Test
@@ -123,11 +190,25 @@ class RepCounterTest {
         durationMs: Long,
         leftUp: Boolean,
         rightUp: Boolean
+    ): Long = feedAt(
+        counter = counter,
+        start = start,
+        durationMs = durationMs,
+        leftY = if (leftUp) TOP_Y else HANG_Y,
+        rightY = if (rightUp) TOP_Y else HANG_Y
+    )
+
+    private fun feedAt(
+        counter: RepCounter,
+        start: Long,
+        durationMs: Long,
+        leftY: Float,
+        rightY: Float
     ): Long {
         var now = start
         val end = start + durationMs
         while (now < end) {
-            counter.process(frame(now, leftUp, rightUp))
+            counter.process(frameAt(now, leftY, rightY))
             now += FRAME_MS
         }
         return now
@@ -146,6 +227,17 @@ class RepCounterTest {
         timestampMs: Long,
         leftUp: Boolean,
         rightUp: Boolean
+    ): PoseFrame = frameAt(
+        timestampMs = timestampMs,
+        leftY = if (leftUp) TOP_Y else HANG_Y,
+        rightY = if (rightUp) TOP_Y else HANG_Y
+    )
+
+    /** Кадр с произвольной высотой кистей: 0,08 — замок, 0,20 — середина, 0,66 — вис. */
+    private fun frameAt(
+        timestampMs: Long,
+        leftY: Float,
+        rightY: Float
     ): PoseFrame {
         val landmarks = MutableList(PoseFrame.LANDMARK_COUNT) {
             PoseLandmark(0.5f, 0.5f, 0f, visibility = 0.9f)
@@ -159,40 +251,22 @@ class RepCounterTest {
             world[index] = PoseLandmark(wx, wy, 0f, 0.95f)
         }
 
+        fun worldY(normalizedY: Float): Float = SHOULDER_WORLD_Y +
+            (SHOULDER_Y - normalizedY) * WORLD_SCALE
+
         set(PoseIndex.NOSE, 0.5f, 0.12f, 0f, 1.75f)
-        set(PoseIndex.LEFT_SHOULDER, 0.42f, 0.32f, -0.18f, 1.42f)
-        set(PoseIndex.RIGHT_SHOULDER, 0.58f, 0.32f, 0.18f, 1.42f)
+        set(PoseIndex.LEFT_SHOULDER, 0.42f, SHOULDER_Y, -0.18f, SHOULDER_WORLD_Y)
+        set(PoseIndex.RIGHT_SHOULDER, 0.58f, SHOULDER_Y, 0.18f, SHOULDER_WORLD_Y)
         set(PoseIndex.LEFT_HIP, 0.45f, 0.62f, -0.12f, 0.98f)
         set(PoseIndex.RIGHT_HIP, 0.55f, 0.62f, 0.12f, 0.98f)
 
-        set(
-            PoseIndex.LEFT_ELBOW,
-            0.42f,
-            if (leftUp) 0.20f else 0.48f,
-            -0.18f,
-            if (leftUp) 1.75f else 1.15f
-        )
-        set(
-            PoseIndex.LEFT_WRIST,
-            0.42f,
-            if (leftUp) 0.08f else 0.66f,
-            -0.18f,
-            if (leftUp) 2.08f else 0.85f
-        )
-        set(
-            PoseIndex.RIGHT_ELBOW,
-            0.58f,
-            if (rightUp) 0.20f else 0.48f,
-            0.18f,
-            if (rightUp) 1.75f else 1.15f
-        )
-        set(
-            PoseIndex.RIGHT_WRIST,
-            0.58f,
-            if (rightUp) 0.08f else 0.66f,
-            0.18f,
-            if (rightUp) 2.08f else 0.85f
-        )
+        fun setArm(elbowIndex: Int, wristIndex: Int, wristY: Float, x: Float) {
+            val elbowY = SHOULDER_Y + (wristY - SHOULDER_Y) * 0.5f
+            set(elbowIndex, x, elbowY, x, worldY(elbowY))
+            set(wristIndex, x, wristY, x, worldY(wristY))
+        }
+        setArm(PoseIndex.LEFT_ELBOW, PoseIndex.LEFT_WRIST, leftY, -0.18f)
+        setArm(PoseIndex.RIGHT_ELBOW, PoseIndex.RIGHT_WRIST, rightY, 0.18f)
 
         return PoseFrame(
             timestampMs = timestampMs,
@@ -205,5 +279,11 @@ class RepCounterTest {
 
     private companion object {
         const val FRAME_MS = 50L
+        const val TOP_Y = 0.08f
+        const val RACK_Y = 0.34f
+        const val HANG_Y = 0.66f
+        const val SHOULDER_Y = 0.32f
+        const val SHOULDER_WORLD_Y = 1.42f
+        const val WORLD_SCALE = 2.2f
     }
 }

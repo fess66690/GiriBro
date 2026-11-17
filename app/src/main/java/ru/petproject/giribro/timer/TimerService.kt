@@ -39,8 +39,17 @@ class TimerService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var tickJob: Job? = null
     private var phaseEndElapsed = 0L
+    /** Окончание текущего отрезка в wall-clock времени — для хронометра уведомления. */
+    private var phaseEndWallClock = 0L
     private var pausedRemainingMs = 0L
     private var tone: ToneGenerator? = null
+
+    /**
+     * Фиксированная время создания уведомления. Если оставлять его равным
+     * текущему при каждую секунду, оболочка (особенно MIUI) заново
+     * пересортировывает уведомление в шторке — оно «прыгает».
+     */
+    private var notificationWhen = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -57,6 +66,7 @@ class TimerService : Service() {
                     return START_NOT_STICKY
                 }
                 val first = plan.steps.first()
+                notificationWhen = System.currentTimeMillis()
                 try {
                     startForeground(
                         TimerNotifications.NOTIFICATION_ID,
@@ -102,6 +112,7 @@ class TimerService : Service() {
             tickJob?.cancel()
             tickJob = null
             phaseEndElapsed = 0L
+            phaseEndWallClock = 0L
             _state.value = TimerState(
                 phase = step.phase,
                 remainingSec = 0,
@@ -136,6 +147,7 @@ class TimerService : Service() {
             plan = plan
         )
         phaseEndElapsed = SystemClock.elapsedRealtime() + step.seconds * 1000L
+        phaseEndWallClock = System.currentTimeMillis() + step.seconds * 1000L
         startTicking()
         updateNotification()
         if (announce) {
@@ -166,8 +178,10 @@ class TimerService : Service() {
                 } else {
                     val seconds = ceil(leftMs / 1000.0).toInt()
                     if (seconds != state.remainingSec) {
+                        // Уведомление обновляется только на смене отрезка: у него
+                        // системный хронометр, поэтому notify каждую секунду не нужен.
+                        // Это убирает «прыганье» в строке уведомлений.
                         _state.value = state.copy(remainingSec = seconds)
-                        updateNotification()
                     }
                 }
             }
@@ -188,6 +202,7 @@ class TimerService : Service() {
         val state = _state.value
         if (state.running || !state.isActive || state.isManual) return
         phaseEndElapsed = SystemClock.elapsedRealtime() + pausedRemainingMs
+        phaseEndWallClock = System.currentTimeMillis() + pausedRemainingMs
         _state.value = state.copy(running = true)
         startTicking()
         updateNotification()
@@ -239,6 +254,11 @@ class TimerService : Service() {
             state.phase == TimerPhase.REST -> state.step?.label ?: "Отдых"
             else -> "Тренировка завершена"
         }
+        // Для активного отрезка показываем обратный отсчёт системным хронометром:
+        // он сам тикает каждую секунду, поэтому уведомление не нужно пересоздавать.
+        // Это убирает «прыганье» в строке уведомлений (особенно в оболочках вроде MIUI).
+        val useChronometer = state.isActive && !manual && state.running && phaseEndWallClock > 0L
+
         val text = when {
             manual -> buildString {
                 append(state.step?.task?.takeIf { it.isNotBlank() } ?: "Выполни подход")
@@ -253,11 +273,15 @@ class TimerService : Service() {
             state.phase == TimerPhase.PREP ||
                 state.phase == TimerPhase.WORK ||
                 state.phase == TimerPhase.REST -> buildString {
-                append(state.remainingSec.clock())
+                // Когда включён хронометр, секунды уже показывает система — не дублируем.
+                if (!useChronometer) {
+                    append(state.remainingSec.clock())
+                }
                 if (state.counterLabel.isNotEmpty()) {
-                    append(" · ")
+                    if (isNotEmpty()) append(" · ")
                     append(state.counterLabel)
                 }
+                if (isEmpty()) append("Отсчёт идёт")
             }
 
             else -> "Хорошая работа"
@@ -279,6 +303,19 @@ class TimerService : Service() {
             .setSilent(true)
             .setContentIntent(openIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+
+        if (useChronometer) {
+            builder
+                .setWhen(phaseEndWallClock)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
+        } else {
+            // Фиксированное время создания: система не пересортировывает уведомление,
+            // пока мы обновляем его на смене отрезка/паузы.
+            builder
+                .setWhen(if (notificationWhen > 0L) notificationWhen else System.currentTimeMillis())
+                .setShowWhen(false)
+        }
 
         if (state.isActive) {
             if (manual) {
