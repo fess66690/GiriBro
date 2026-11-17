@@ -13,3 +13,7 @@ keystore.properties
 keystore/
 *.jks
 *.keystore
+
+# Готовые APK для RuStore и их контрольные суммы: локальные артефакты,
+# не бинарники в репозитории.
+dist/
