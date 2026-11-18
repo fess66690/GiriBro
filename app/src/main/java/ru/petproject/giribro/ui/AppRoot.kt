@@ -1,5 +1,6 @@
 package ru.petproject.giribro.ui
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,9 +25,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -41,7 +46,10 @@ import androidx.navigation.navArgument
 import kotlinx.coroutines.flow.collect
 import ru.petproject.giribro.AppViewModel
 import ru.petproject.giribro.data.SetCaptureMode
+import ru.petproject.giribro.data.WorkoutDraftJson
+import ru.petproject.giribro.data.WorkoutDraftStore
 import ru.petproject.giribro.timer.TimerPhase
+import ru.petproject.giribro.timer.TimerPlanSource
 import ru.petproject.giribro.timer.TimerService
 import ru.petproject.giribro.vision.RepExercise
 import ru.petproject.giribro.ui.screens.BodyScreen
@@ -53,6 +61,10 @@ import ru.petproject.giribro.ui.screens.ProfileScreen
 import ru.petproject.giribro.ui.screens.SettingsScreen
 import ru.petproject.giribro.ui.screens.StatsScreen
 import ru.petproject.giribro.ui.screens.TimerScreen
+import ru.petproject.giribro.ui.screens.WorkoutCompletionDialog
+import ru.petproject.giribro.ui.screens.asTodayWorkout
+import ru.petproject.giribro.ui.screens.workoutShareText
+import java.time.LocalDate
 
 private data class BottomItem(
     val route: String,
@@ -63,7 +75,7 @@ private data class BottomItem(
 
 private val bottomItems = listOf(
     BottomItem("diary", "Дневник", Icons.Outlined.FitnessCenter),
-    BottomItem("stats", "Статистика", Icons.Outlined.Insights),
+    BottomItem("stats", "Метрики", Icons.Outlined.Insights),
     BottomItem("camera-rep", "Счётчик", Icons.Outlined.PhotoCamera, accent = true),
     BottomItem("timer", "Таймер", Icons.Outlined.Timer),
     BottomItem("profile", "Профиль", Icons.Outlined.Person)
@@ -96,6 +108,24 @@ fun AppRoot(
     val timerFullScreen = baseRoute == "timer" &&
         (timerState.isActive || timerState.phase == TimerPhase.DONE)
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+    val draftStore = remember(context.applicationContext) {
+        WorkoutDraftStore(context.applicationContext)
+    }
+
+    // По завершении тренировки пользователь сам решает, что делать с результатом.
+    // Для обычного интервального таймера диалог не показывается.
+    val completionDraft = remember(timerState.workoutDraftJson) {
+        timerState.workoutDraftJson.takeIf { it.isNotBlank() }
+            ?.let(WorkoutDraftJson::decode)
+    }
+    var completionDismissed by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(timerState.phase) {
+        if (timerState.phase != TimerPhase.DONE) completionDismissed = false
+    }
+    val showCompletionDialog = timerState.phase == TimerPhase.DONE &&
+        timerState.plan?.source == TimerPlanSource.WORKOUT &&
+        completionDraft != null && !completionDismissed
 
     LaunchedEffect(vm) {
         vm.messages.collect { message ->
@@ -316,6 +346,57 @@ fun AppRoot(
                         }
                     )
                 }
+            }
+
+            if (showCompletionDialog && completionDraft != null) {
+                val draft = completionDraft
+                WorkoutCompletionDialog(
+                    draft = draft,
+                    onSave = {
+                        vm.saveWorkout(draft.asTodayWorkout()) {
+                            draftStore.clear()
+                            completionDismissed = true
+                            TimerService.stop(context)
+                            navController.popBackStack("diary", false)
+                            navController.navigate("stats") {
+                                launchSingleTop = true
+                            }
+                        }
+                    },
+                    onShare = {
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, workoutShareText(draft))
+                        }
+                        runCatching {
+                            context.startActivity(
+                                Intent.createChooser(sendIntent, "Поделиться тренировкой")
+                            )
+                        }
+                        completionDismissed = true
+                    },
+                    onEdit = {
+                        draftStore.save(
+                            draft.copy(
+                                date = LocalDate.now(),
+                                editingId = null,
+                                editingCreatedAt = null
+                            )
+                        )
+                        completionDismissed = true
+                        TimerService.stop(context)
+                        navController.popBackStack("diary", false)
+                        navController.navigate("new") {
+                            launchSingleTop = true
+                        }
+                    },
+                    onCancel = {
+                        draftStore.clear()
+                        completionDismissed = true
+                        TimerService.stop(context)
+                        navController.popBackStack("diary", false)
+                    }
+                )
             }
         }
     }

@@ -73,6 +73,7 @@ import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.data.SetEntry
 import ru.petproject.giribro.data.Workout
 import ru.petproject.giribro.data.WorkoutDraft
+import ru.petproject.giribro.data.WorkoutDraftJson
 import ru.petproject.giribro.data.WorkoutDraftStore
 import ru.petproject.giribro.data.asDuration
 import ru.petproject.giribro.data.asTonnage
@@ -189,7 +190,8 @@ fun NewWorkoutScreen(
         ) {
             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        if (!TimerService.startPlan(context, plan)) {
+        val draftJson = vm.snapshot()?.let(WorkoutDraftJson::encode).orEmpty()
+        if (!TimerService.startPlan(context, plan, draftJson)) {
             Toast.makeText(context, "Не удалось запустить таймер", Toast.LENGTH_SHORT).show()
             return
         }
@@ -380,7 +382,12 @@ fun NewWorkoutScreen(
                 },
                 onRestart = {
                     activeWorkoutTimer.plan?.let { activePlan ->
-                        if (!TimerService.startPlan(context, activePlan)) {
+                        if (!TimerService.startPlan(
+                                context,
+                                activePlan,
+                                activeWorkoutTimer.workoutDraftJson
+                            )
+                        ) {
                             Toast.makeText(
                                 context,
                                 "Не удалось запустить таймер",

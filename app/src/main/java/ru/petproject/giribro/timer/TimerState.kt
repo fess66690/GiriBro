@@ -22,7 +22,12 @@ data class TimerState(
     val remainingSec: Int = 0,
     val stepIndex: Int = -1,
     val running: Boolean = false,
-    val plan: TimerPlan? = null
+    val plan: TimerPlan? = null,
+    /**
+     * Черновик тренировки, из которой запущен план. Нужен после завершения,
+     * чтобы предложить сохранить/поделиться/отредактировать результат.
+     */
+    val workoutDraftJson: String = ""
 ) {
     val step: TimerStep? get() = plan?.steps?.getOrNull(stepIndex)
 

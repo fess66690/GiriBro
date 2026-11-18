@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -67,6 +68,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -265,6 +267,23 @@ fun CameraRepScreen(
     DisposableEffect(Unit) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
+    }
+
+    // Подход из таймера: камера занимает весь экран, а счёт и время этапа
+    // показываются поверх видео внизу. Настройки остаются доступны только
+    // в обычном режиме счётчика.
+    if (initialCaptureMode != SetCaptureMode.NONE) {
+        FullScreenCameraRep(
+            state = state,
+            vm = vm,
+            hasPermission = hasPermission,
+            showRationale = showRationale,
+            onRequestPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+            onCameraReady = { cameraReady = it },
+            videoCapture = videoCapture,
+            onBack = onBack
+        )
+        return
     }
 
     LazyColumn(
@@ -483,14 +502,21 @@ private fun CameraCard(
     onRequestPermission: () -> Unit,
     onCameraReady: (Boolean) -> Unit,
     videoCapture: VideoCapture<Recorder>,
-    vm: CameraRepViewModel
+    vm: CameraRepViewModel,
+    fullScreen: Boolean = false,
+    showFixationBar: Boolean = true
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val density = LocalDensity.current
-    val previewView = remember {
+    val previewView = remember(fullScreen) {
         PreviewView(context).apply {
-            scaleType = PreviewView.ScaleType.FIT_CENTER
+            // FULL_CENTER заполняет весь экран, обрезая края картинки.
+            scaleType = if (fullScreen) {
+                PreviewView.ScaleType.FILL_CENTER
+            } else {
+                PreviewView.ScaleType.FIT_CENTER
+            }
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
     }
@@ -565,20 +591,26 @@ private fun CameraCard(
     val jointRadius = with(density) { 3.5.dp.toPx() }
     val wristRadius = with(density) { 6.dp.toPx() }
     val captureMode = state.captureMode
-    val previewHeight = if (captureMode != SetCaptureMode.NONE) {
+    val previewHeight = if (!fullScreen && captureMode != SetCaptureMode.NONE) {
         (LocalConfiguration.current.screenHeightDp * 0.62f).dp
     } else {
         null
     }
 
-    Box(
+    val previewModifier = if (fullScreen) {
+        Modifier.fillMaxSize()
+    } else {
         Modifier
             .fillMaxWidth()
             .then(
                 if (previewHeight != null) Modifier.height(previewHeight)
                 else Modifier.aspectRatio(3f / 4f)
             )
-            .clip(RoundedCornerShape(24.dp))
+    }
+
+    Box(
+        previewModifier
+            .clip(RoundedCornerShape(if (fullScreen) 0.dp else 24.dp))
             .background(Color.Black)
     ) {
         if (hasPermission) {
@@ -612,7 +644,7 @@ private fun CameraCard(
                     .align(Alignment.TopEnd)
                     .padding(14.dp)
             )
-            if (state.fixationProgress > 0f) {
+            if (showFixationBar && state.fixationProgress > 0f) {
                 LinearProgressIndicator(
                     progress = { state.fixationProgress },
                     modifier = Modifier
@@ -631,6 +663,155 @@ private fun CameraCard(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(24.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Полноэкранный режим подхода из таймера: видео на весь экран, счёт и время
+ * этапа — в нижнем оверлее поверх картинки.
+ */
+@Composable
+private fun FullScreenCameraRep(
+    state: CameraRepUiState,
+    vm: CameraRepViewModel,
+    hasPermission: Boolean,
+    showRationale: Boolean,
+    onRequestPermission: () -> Unit,
+    onCameraReady: (Boolean) -> Unit,
+    videoCapture: VideoCapture<Recorder>,
+    onBack: () -> Unit
+) {
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        CameraCard(
+            state = state,
+            hasPermission = hasPermission,
+            showRationale = showRationale,
+            onRequestPermission = onRequestPermission,
+            onCameraReady = onCameraReady,
+            videoCapture = videoCapture,
+            vm = vm,
+            fullScreen = true,
+            showFixationBar = false
+        )
+
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(12.dp)
+                .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+        ) {
+            Icon(
+                Icons.AutoMirrored.Outlined.ArrowBack,
+                contentDescription = "Назад к таймеру",
+                tint = Color.White
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.88f))
+                    )
+                )
+                .padding(start = 20.dp, end = 20.dp, top = 44.dp, bottom = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = state.exercise.label.uppercase(Locale.getDefault()),
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White.copy(alpha = 0.8f),
+                letterSpacing = 2.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = state.total.toString(),
+                    style = MaterialTheme.typography.displayLarge,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text("повторов", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                    if (state.exercise == RepExercise.SNATCH) {
+                        Text(
+                            "левая ${state.left} · правая ${state.right}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.75f)
+                        )
+                    } else {
+                        Text(
+                            "rpm ${state.rpm}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.75f)
+                        )
+                    }
+                }
+            }
+
+            val elapsed = (state.elapsedMs / 1000L).toInt()
+            val timeText = if (state.setDurationSec > 0) {
+                "Осталось ${state.setRemainingSec} с"
+            } else {
+                "${elapsed / 60}:${(elapsed % 60).toString().padStart(2, '0')}"
+            }
+            Text(
+                text = timeText,
+                style = MaterialTheme.typography.headlineMedium,
+                color = if (state.setDurationSec > 0 && state.setRemainingSec <= 5) {
+                    Color(0xFFFFC857)
+                } else {
+                    Color.White
+                },
+                fontWeight = FontWeight.Bold
+            )
+
+            if (state.fixationProgress > 0f) {
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { state.fixationProgress },
+                    modifier = Modifier.fillMaxWidth().height(5.dp),
+                    color = Color(0xFFC9F24A),
+                    trackColor = Color.White.copy(alpha = 0.2f)
+                )
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = { vm.removeRep() },
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.White
+                    )
+                ) { Text("−1") }
+                OutlinedButton(
+                    onClick = { vm.addRep() },
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.White
+                    )
+                ) { Text("+1") }
+                Button(onClick = { vm.stop() }) { Text("Стоп") }
+            }
+        }
+
+        if (state.error != null) {
+            Text(
+                text = state.error.orEmpty(),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(24.dp)
+                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                    .padding(16.dp)
             )
         }
     }

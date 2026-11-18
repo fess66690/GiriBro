@@ -3,10 +3,12 @@ package ru.petproject.giribro
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,6 +18,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.petproject.giribro.data.ThemeMode
+import ru.petproject.giribro.timer.TimerService
 import ru.petproject.giribro.ui.AppRoot
 import ru.petproject.giribro.ui.theme.GiriBroTheme
 
@@ -30,6 +33,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: AppViewModel = viewModel()
             val settings by vm.settings.collectAsStateWithLifecycle()
+            val timerState by TimerService.state.collectAsStateWithLifecycle()
+            val view = LocalView.current
+
+            // Пока идёт тренировка, экран не должен гаснуть: пользователь
+            // смотрит таймер/счётчик и не должен каждый раз будить устройство.
+            DisposableEffect(timerState.isActive) {
+                val window = (view.context as Activity).window
+                val flag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                if (timerState.isActive) window.addFlags(flag) else window.clearFlags(flag)
+                onDispose { window.clearFlags(flag) }
+            }
 
             val darkTheme = when (settings.themeMode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -37,7 +51,6 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.LIGHT -> false
             }
 
-            val view = LocalView.current
             if (!view.isInEditMode) {
                 SideEffect {
                     val window = (view.context as Activity).window

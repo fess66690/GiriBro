@@ -121,7 +121,12 @@ fun TimerScreen(
                 val plan = state.plan
                 if (plan == null) {
                     start()
-                } else if (!TimerService.startPlan(context, plan)) {
+                } else if (!TimerService.startPlan(
+                        context,
+                        plan,
+                        state.workoutDraftJson
+                    )
+                ) {
                     Toast.makeText(
                         context,
                         "Не удалось запустить таймер",

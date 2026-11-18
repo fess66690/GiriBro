@@ -9,6 +9,7 @@ import android.content.Intent
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -42,7 +43,11 @@ class TimerService : Service() {
     /** Окончание текущего отрезка в wall-clock времени — для хронометра уведомления. */
     private var phaseEndWallClock = 0L
     private var pausedRemainingMs = 0L
+    /** Секунда, на которой уже подан сигнал в конце текущего отрезка. */
+    private var lastSignalledSec = -1
     private var tone: ToneGenerator? = null
+    /** Не даёт устройству уйти в сон, пока идёт тренировка. */
+    private var wakeLock: PowerManager.WakeLock? = null
 
     /**
      * Фиксированная время создания уведомления. Если оставлять его равным
@@ -50,6 +55,8 @@ class TimerService : Service() {
      * пересортировывает уведомление в шторке — оно «прыгает».
      */
     private var notificationWhen = 0L
+    /** Черновик тренировки, переданный при запуске плана. */
+    private var workoutDraftJson = ""
 
     override fun onCreate() {
         super.onCreate()
@@ -67,6 +74,8 @@ class TimerService : Service() {
                 }
                 val first = plan.steps.first()
                 notificationWhen = System.currentTimeMillis()
+                workoutDraftJson = intent.getStringExtra(EXTRA_WORKOUT_DRAFT).orEmpty()
+                acquireWakeLock()
                 try {
                     startForeground(
                         TimerNotifications.NOTIFICATION_ID,
@@ -76,7 +85,8 @@ class TimerService : Service() {
                                 remainingSec = first.seconds,
                                 stepIndex = 0,
                                 running = true,
-                                plan = plan
+                                plan = plan,
+                                workoutDraftJson = workoutDraftJson
                             )
                         )
                     )
@@ -102,6 +112,7 @@ class TimerService : Service() {
     }
 
     private fun startStep(plan: TimerPlan, index: Int, announce: Boolean = true) {
+        lastSignalledSec = -1
         if (index >= plan.steps.size) {
             finish()
             return
@@ -118,7 +129,8 @@ class TimerService : Service() {
                 remainingSec = 0,
                 stepIndex = index,
                 running = true,
-                plan = plan
+                plan = plan,
+                workoutDraftJson = workoutDraftJson
             )
             updateNotification()
             if (announce) {
@@ -144,7 +156,8 @@ class TimerService : Service() {
             remainingSec = step.seconds,
             stepIndex = index,
             running = true,
-            plan = plan
+            plan = plan,
+            workoutDraftJson = workoutDraftJson
         )
         phaseEndElapsed = SystemClock.elapsedRealtime() + step.seconds * 1000L
         phaseEndWallClock = System.currentTimeMillis() + step.seconds * 1000L
@@ -178,6 +191,13 @@ class TimerService : Service() {
                 } else {
                     val seconds = ceil(leftMs / 1000.0).toInt()
                     if (seconds != state.remainingSec) {
+                        // Последние пять секунд каждого отрезка сопровождаются
+                        // звуком и короткой вибрацией — по одному сигналу на секунду.
+                        if (seconds in 1..5 && seconds != lastSignalledSec) {
+                            lastSignalledSec = seconds
+                            beep()
+                            vibrate(80)
+                        }
                         // Уведомление обновляется только на смене отрезка: у него
                         // системный хронометр, поэтому notify каждую секунду не нужен.
                         // Это убирает «прыганье» в строке уведомлений.
@@ -203,6 +223,8 @@ class TimerService : Service() {
         if (state.running || !state.isActive || state.isManual) return
         phaseEndElapsed = SystemClock.elapsedRealtime() + pausedRemainingMs
         phaseEndWallClock = System.currentTimeMillis() + pausedRemainingMs
+        // После паузы не повторяем сигнал на той же секунде, где остановились.
+        lastSignalledSec = state.remainingSec
         _state.value = state.copy(running = true)
         startTicking()
         updateNotification()
@@ -219,6 +241,7 @@ class TimerService : Service() {
         tickJob?.cancel()
         tickJob = null
         _state.value = _state.value.copy(phase = TimerPhase.DONE, remainingSec = 0, running = false)
+        releaseWakeLock()
         beep(times = 3)
         vibrate(600)
         getSystemService(NotificationManager::class.java)?.cancel(TimerNotifications.NOTIFICATION_ID)
@@ -229,6 +252,7 @@ class TimerService : Service() {
     private fun stopTimer() {
         tickJob?.cancel()
         tickJob = null
+        releaseWakeLock()
         _state.value = TimerState()
         getSystemService(NotificationManager::class.java)?.cancel(TimerNotifications.NOTIFICATION_ID)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -339,6 +363,22 @@ class TimerService : Service() {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        val powerManager = getSystemService(PowerManager::class.java) ?: return
+        wakeLock = runCatching {
+            powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GiriBro:WorkoutTimer")
+                .apply { acquire() }
+        }.getOrNull()
+    }
+
+    private fun releaseWakeLock() {
+        runCatching {
+            wakeLock?.takeIf { it.isHeld }?.release()
+        }.onFailure { Log.w(TAG, "Не удалось снять блокировку сна", it) }
+        wakeLock = null
+    }
+
     private fun beep(times: Int = 1) {
         scope.launch {
             repeat(times) {
@@ -360,6 +400,7 @@ class TimerService : Service() {
 
     override fun onDestroy() {
         tickJob?.cancel()
+        releaseWakeLock()
         scope.cancel()
         runCatching { tone?.release() }
         tone = null
@@ -386,6 +427,7 @@ class TimerService : Service() {
         private const val EXTRA_PLAN_COUNT = "plan_count"
         private const val EXTRA_PLAN_EXERCISES = "plan_exercises"
         private const val EXTRA_PLAN_CAPTURE_MODES = "plan_capture_modes"
+        private const val EXTRA_WORKOUT_DRAFT = "workout_draft"
 
         private val _state = MutableStateFlow(TimerState())
         val state: StateFlow<TimerState> = _state.asStateFlow()
@@ -393,7 +435,11 @@ class TimerService : Service() {
         fun start(context: Context, config: TimerConfig): Boolean =
             startPlan(context, config.toPlan())
 
-        fun startPlan(context: Context, plan: TimerPlan): Boolean {
+        fun startPlan(
+            context: Context,
+            plan: TimerPlan,
+            workoutDraftJson: String = ""
+        ): Boolean {
             if (plan.steps.isEmpty()) return false
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_START
@@ -415,6 +461,7 @@ class TimerService : Service() {
                     EXTRA_PLAN_CAPTURE_MODES,
                     ArrayList(plan.steps.map { it.captureMode.name })
                 )
+                putExtra(EXTRA_WORKOUT_DRAFT, workoutDraftJson)
             }
             return runCatching {
                 ContextCompat.startForegroundService(context, intent)
