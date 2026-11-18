@@ -35,7 +35,11 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -101,6 +105,13 @@ fun FullScreenTimer(
         imm?.hideSoftInputFromWindow(view.windowToken, 0)
     }
     val autoOpenCamera = rememberUpdatedState(onAutoOpenCamera)
+    // Когда пользователь возвращается из камеры, экран таймера создаётся заново.
+    // Без этой отметки тот же рабочий отрезок открывал бы камеру снова и снова,
+    // поэтому камера не должна мешать увидеть таймер после подхода.
+    var autoOpenedStep by rememberSaveable { mutableIntStateOf(-1) }
+    LaunchedEffect(state.plan) {
+        autoOpenedStep = -1
+    }
     LaunchedEffect(state.plan, state.stepIndex, state.phase, autoOpenCamera) {
         val step = state.step
         val exercise = step?.exercise
@@ -108,6 +119,8 @@ fun FullScreenTimer(
         if (state.phase != TimerPhase.WORK || exercise == null || mode == null ||
             mode == SetCaptureMode.NONE
         ) return@LaunchedEffect
+        if (autoOpenedStep == state.stepIndex) return@LaunchedEffect
+        autoOpenedStep = state.stepIndex
         autoOpenCamera.value?.invoke(exercise, mode, step.seconds)
     }
 

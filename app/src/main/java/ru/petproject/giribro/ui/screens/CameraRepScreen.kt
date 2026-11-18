@@ -234,6 +234,19 @@ fun CameraRepScreen(
         }
     }
 
+    // Подход, открытый из таймера, после завершения возвращает к таймеру —
+    // пользователь сразу видит следующий отрезок тренировки.
+    var autoSetWasRunning by remember { mutableStateOf(false) }
+    LaunchedEffect(state.running) {
+        if (initialCaptureMode == SetCaptureMode.NONE) return@LaunchedEffect
+        if (state.running) {
+            autoSetWasRunning = true
+        } else if (autoSetWasRunning) {
+            autoSetWasRunning = false
+            onBack()
+        }
+    }
+
     var hasPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==

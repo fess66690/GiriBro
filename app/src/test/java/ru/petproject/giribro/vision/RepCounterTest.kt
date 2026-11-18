@@ -43,15 +43,41 @@ class RepCounterTest {
 
     @Test
     fun `short fixation is reported but not counted`() {
-        val counter = RepCounter(jerk)
+        // У рывка полный порог (0,8 с), поэтому удержание 0,4 с — короткое.
+        val counter = RepCounter(snatch)
         var now = 1_000L
 
-        now = feed(counter, now, durationMs = 300, leftUp = true, rightUp = true)
+        now = feed(counter, now, durationMs = 400, leftUp = true, rightUp = false)
         now = feed(counter, now, durationMs = 1_000, leftUp = false, rightUp = false)
         val update = counter.process(frame(now, leftUp = false, rightUp = false))
 
         assertEquals(0, update.snapshot.total)
         assertEquals(1, update.snapshot.shortFixations)
+    }
+
+    @Test
+    fun `jerk uses short lockout confirmation`() {
+        val counter = RepCounter(jerk)
+        var now = 1_000L
+
+        // 0,4 с достаточно для толчка, хотя полный порог соревновательный (0,8 с).
+        now = feedAt(counter, now, durationMs = 400, leftY = TOP_Y, rightY = TOP_Y)
+
+        assertEquals(1, counter.currentSnapshot().total)
+    }
+
+    @Test
+    fun `jerk does not require hang between reps`() {
+        val counter = RepCounter(jerk)
+        var now = 1_000L
+
+        repeat(2) {
+            now = feedAt(counter, now, durationMs = 400, leftY = TOP_Y, rightY = TOP_Y)
+            // Гири уходят на грудь, но не в вис — для толчка этого достаточно.
+            now = feedAt(counter, now, durationMs = 1_100, leftY = RACK_Y, rightY = RACK_Y)
+        }
+
+        assertEquals(2, counter.currentSnapshot().total)
     }
 
     @Test

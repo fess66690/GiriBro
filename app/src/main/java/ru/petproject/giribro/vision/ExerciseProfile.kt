@@ -20,8 +20,8 @@ enum class RepExercise(
 }
 
 /**
- * Порог фиксации. 0,8 с — соревновательный стандарт, 0,4 с — тренировочный
- * режим с запасом, 1,2 с — строгая фиксация для отработки.
+ * Порог фиксации: 0,4 с — тренировочный, 0,6 с — строгий,
+ * 0,8 с — соревновательный стандарт.
  */
 enum class FixationPreset(
     val seconds: Float,
@@ -29,8 +29,8 @@ enum class FixationPreset(
     val hint: String
 ) {
     TRAINING(0.4f, "Тренировочный", "0,4 с — быстрый счёт"),
-    COMPETITION(0.8f, "Соревновательный", "0,8 с — как у судьи"),
-    STRICT(1.2f, "Строгий", "1,2 с — запас по фиксации");
+    STRICT(0.6f, "Строгий", "0,6 с — чуть строже"),
+    COMPETITION(0.8f, "Соревновательный", "0,8 с — как у судьи");
 
     companion object {
         fun fromName(name: String?): FixationPreset =
@@ -43,8 +43,11 @@ enum class FixationPreset(
  * начинать следующий. Задаётся упражнением и не зависит от настроек.
  */
 enum class RepTechnique {
-    /** Толчок: полный замок над головой, ждём выбранный порог фиксации. */
-    LOCKOUT,
+    /**
+     * Толчок: короткое подтверждение замка (как в ДЦ), но следующий повтор
+     * возможен просто после ухода кистей вниз — без возврата в вис.
+     */
+    SHORT_LOCKOUT,
 
     /**
      * Длинный цикл: замок → сброс в вис → заброс на грудь → новый замок.
@@ -89,14 +92,15 @@ data class ExerciseProfile(
     val minRepIntervalMs: Long get() = (minRepIntervalSec * 1000f).toLong()
 
     /**
-     * Фактическое время подтверждения верхней точки. В длинном цикле гири
-     * сразу уходят в вис, поэтому ждать 0,8–1,2 с невозможно: используем
-     * короткое подтверждение, зависящее от выбранного порога.
+     * Фактическое время подтверждения верхней точки. В толчке и ДЦ гири
+     * уходят вниз сразу после замка, поэтому ждать полный порог невозможно:
+     * используем короткое подтверждение, зависящее от выбранного порога.
      */
     val effectiveFixationSec: Float
         get() = when (technique) {
+            RepTechnique.SHORT_LOCKOUT,
             RepTechnique.FULL_CYCLE -> (fixationSec * 0.25f).coerceIn(0.15f, 0.30f)
-            else -> fixationSec
+            RepTechnique.ALTERNATING -> fixationSec
         }
 
     val effectiveFixationMs: Long get() = (effectiveFixationSec * 1000f).toLong()
@@ -110,17 +114,19 @@ data class ExerciseProfile(
     companion object {
         fun of(exercise: RepExercise, preset: FixationPreset): ExerciseProfile =
             when (exercise) {
+                // Толчок считаем по той же схеме, что ДЦ (короткое подтверждение
+                // замка и такие же пороги), но без требования сброса в вис.
                 RepExercise.JERK -> ExerciseProfile(
                     exercise = exercise,
                     fixationSec = preset.seconds,
                     bothHands = true,
                     minRepIntervalSec = 1.0f,
                     wristAboveShoulderRatio = 0.45f,
-                    elbowStraightDeg = 160f,
-                    maxTorsoTiltDeg = 25f,
-                    topGraceMs = 220,
-                    releaseMs = 250,
-                    technique = RepTechnique.LOCKOUT
+                    elbowStraightDeg = 155f,
+                    maxTorsoTiltDeg = 30f,
+                    topGraceMs = 180,
+                    releaseMs = 300,
+                    technique = RepTechnique.SHORT_LOCKOUT
                 )
 
                 RepExercise.LONG_CYCLE -> ExerciseProfile(
