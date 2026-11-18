@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.media.MediaPlayer
 import android.media.ToneGenerator
 import android.os.IBinder
 import android.os.PowerManager
@@ -45,6 +46,8 @@ class TimerService : Service() {
     private var pausedRemainingMs = 0L
     /** Секунда, на которой уже подан сигнал в конце текущего отрезка. */
     private var lastSignalledSec = -1
+    /** Сигнал времени по Гринвичу — пять тиков, последний длиннее. */
+    private var countdownPlayer: MediaPlayer? = null
     private var tone: ToneGenerator? = null
     /** Не даёт устройству уйти в сон, пока идёт тренировка. */
     private var wakeLock: PowerManager.WakeLock? = null
@@ -162,6 +165,11 @@ class TimerService : Service() {
         phaseEndElapsed = SystemClock.elapsedRealtime() + step.seconds * 1000L
         phaseEndWallClock = System.currentTimeMillis() + step.seconds * 1000L
         startTicking()
+        if (step.seconds in 1..5) {
+            // Короткий отрезок не дождётся перехода «5» — проиграем сигнал сразу.
+            lastSignalledSec = step.seconds
+            playGreenwichSignal()
+        }
         updateNotification()
         if (announce) {
             beep()
@@ -191,11 +199,12 @@ class TimerService : Service() {
                 } else {
                     val seconds = ceil(leftMs / 1000.0).toInt()
                     if (seconds != state.remainingSec) {
-                        // Последние пять секунд каждого отрезка сопровождаются
-                        // звуком и короткой вибрацией — по одному сигналу на секунду.
+                        // Последние пять секунд каждого отрезка отсчитывает
+                        // записанный сигнал времени по Гринвичу: пять тиков,
+                        // из которых последний — длинный.
                         if (seconds in 1..5 && seconds != lastSignalledSec) {
                             lastSignalledSec = seconds
-                            beep()
+                            if (seconds == 5) playGreenwichSignal()
                             vibrate(80)
                         }
                         // Уведомление обновляется только на смене отрезка: у него
@@ -241,6 +250,7 @@ class TimerService : Service() {
         tickJob?.cancel()
         tickJob = null
         _state.value = _state.value.copy(phase = TimerPhase.DONE, remainingSec = 0, running = false)
+        releaseCountdownPlayer()
         releaseWakeLock()
         beep(times = 3)
         vibrate(600)
@@ -252,6 +262,7 @@ class TimerService : Service() {
     private fun stopTimer() {
         tickJob?.cancel()
         tickJob = null
+        releaseCountdownPlayer()
         releaseWakeLock()
         _state.value = TimerState()
         getSystemService(NotificationManager::class.java)?.cancel(TimerNotifications.NOTIFICATION_ID)
@@ -379,6 +390,27 @@ class TimerService : Service() {
         wakeLock = null
     }
 
+    private fun playGreenwichSignal() {
+        runCatching {
+            countdownPlayer?.release()
+            countdownPlayer = MediaPlayer.create(this, R.raw.greenwich_signal)?.apply {
+                setOnCompletionListener { player ->
+                    runCatching { player.release() }
+                    if (countdownPlayer === player) countdownPlayer = null
+                }
+                start()
+            }
+        }.onFailure { Log.w(TAG, "Не удалось воспроизвести сигнал времени", it) }
+    }
+
+    private fun releaseCountdownPlayer() {
+        runCatching {
+            countdownPlayer?.takeIf { it.isPlaying }?.stop()
+            countdownPlayer?.release()
+        }.onFailure { Log.w(TAG, "Не удалось остановить сигнал времени", it) }
+        countdownPlayer = null
+    }
+
     private fun beep(times: Int = 1) {
         scope.launch {
             repeat(times) {
@@ -400,6 +432,7 @@ class TimerService : Service() {
 
     override fun onDestroy() {
         tickJob?.cancel()
+        releaseCountdownPlayer()
         releaseWakeLock()
         scope.cancel()
         runCatching { tone?.release() }

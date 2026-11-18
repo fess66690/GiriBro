@@ -1,6 +1,8 @@
 package ru.petproject.giribro.ui.screens
 
 import android.app.Application
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -44,7 +46,15 @@ data class CameraRepUiState(
     val error: String? = null,
     val captureMode: SetCaptureMode = SetCaptureMode.NONE,
     val setDurationSec: Int = 0,
-    val setRemainingSec: Int = 0
+    val setRemainingSec: Int = 0,
+    /**Автоподсчёт можно выключить и считать только вручную.*/
+    val autoCount: Boolean = true,
+    /**Темп метронома, оборотов в минуту.*/
+    val tempoRpm: Int = 15,
+    val audioMetronome: Boolean = false,
+    val visualMetronome: Boolean = false,
+    /**Короткая вспышка на каждом ударе метронома.*/
+    val beat: Boolean = false
 ) {
     val elapsedSec: Int get() = (elapsedMs / 1000L).toInt()
     val rpm: Int
@@ -65,6 +75,8 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
     private var ticker: Job? = null
     private var startedAt = 0L
     private var lastEvent: RepEvent? = null
+    private var lastBeatIndex = -1L
+    private var tone: ToneGenerator? = null
 
     fun poseAnalyzer(): MediaPipePoseSource? {
         poseSource?.let { return it }
@@ -113,6 +125,39 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         )
     }
 
+    fun setAutoCount(enabled: Boolean) {
+        if (_state.value.autoCount == enabled) return
+        _state.value = _state.value.copy(
+            autoCount = enabled,
+            fixationProgress = 0f,
+            activeSides = emptySet()
+        )
+    }
+
+    fun setCaptureMode(mode: SetCaptureMode) {
+        if (_state.value.captureMode == mode) return
+        stop()
+        _state.value = _state.value.copy(
+            captureMode = mode,
+            setDurationSec = 0,
+            setRemainingSec = 0
+        )
+    }
+
+    fun setTempo(rpm: Int) {
+        _state.value = _state.value.copy(tempoRpm = rpm.coerceIn(6, 60))
+        lastBeatIndex = -1L
+    }
+
+    fun setAudioMetronome(enabled: Boolean) {
+        _state.value = _state.value.copy(audioMetronome = enabled)
+        if (enabled) ensureTone() else releaseTone()
+    }
+
+    fun setVisualMetronome(enabled: Boolean) {
+        _state.value = _state.value.copy(visualMetronome = enabled)
+    }
+
     /** Автостарт подхода, открытого из таймера. */
     fun startSet(mode: SetCaptureMode, durationSec: Int) {
         _state.value = _state.value.copy(
@@ -127,6 +172,8 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         if (_state.value.running) return
         counter.reset()
         startedAt = SystemClock.elapsedRealtime()
+        lastBeatIndex = -1L
+        if (_state.value.audioMetronome) ensureTone()
         _state.value = _state.value.copy(
             running = true,
             total = 0,
@@ -152,9 +199,18 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
                 } else {
                     0
                 }
+                val intervalMs = 60_000L / _state.value.tempoRpm.coerceIn(6, 60)
+                val beatIndex = elapsed / intervalMs
+                if (beatIndex != lastBeatIndex) {
+                    lastBeatIndex = beatIndex
+                    if (_state.value.audioMetronome) {
+                        runCatching { ensureTone()?.startTone(ToneGenerator.TONE_PROP_BEEP, 60) }
+                    }
+                }
                 _state.value = _state.value.copy(
                     elapsedMs = elapsed,
-                    setRemainingSec = remaining
+                    setRemainingSec = remaining,
+                    beat = _state.value.visualMetronome && (elapsed % intervalMs) < 200L
                 )
                 if (duration > 0 && remaining == 0) {
                     stop()
@@ -220,6 +276,16 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
             _state.value = _state.value.copy(frame = frame, tracking = true)
             return
         }
+        if (!_state.value.autoCount) {
+            // Ручной режим: поза всё ещё рисуется, но повторы не добавляются.
+            _state.value = _state.value.copy(
+                frame = frame,
+                tracking = true,
+                fixationProgress = 0f,
+                activeSides = emptySet()
+            )
+            return
+        }
         val update = counter.process(frame)
         lastEvent = update.events.lastOrNull()
         _state.value = _state.value.copy(frame = frame)
@@ -262,8 +328,21 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         _state.value = _state.value.copy(error = "$context\n$details")
     }
 
+    private fun ensureTone(): ToneGenerator? {
+        if (tone == null) {
+            tone = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 60) }.getOrNull()
+        }
+        return tone
+    }
+
+    private fun releaseTone() {
+        runCatching { tone?.release() }
+        tone = null
+    }
+
     override fun onCleared() {
         ticker?.cancel()
+        releaseTone()
         poseSource?.close()
         poseSource = null
         super.onCleared()
