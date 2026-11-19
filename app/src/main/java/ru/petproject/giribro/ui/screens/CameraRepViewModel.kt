@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import ru.petproject.giribro.GiriBroApp
+import ru.petproject.giribro.data.CounterGoal
+import ru.petproject.giribro.data.CounterTimerFormat
 import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.vision.ExerciseProfile
 import ru.petproject.giribro.vision.FixationPreset
@@ -29,7 +32,23 @@ import kotlin.math.roundToInt
 data class CameraRepUiState(
     val exercise: RepExercise = RepExercise.JERK,
     val preset: FixationPreset = FixationPreset.COMPETITION,
+
+    /** Цель подхода, выбранная перед стартом. */
+    val goal: CounterGoal = CounterGoal.TIME,
+    /** Цель по времени, секунды. 0 — без ограничения (подход из таймера). */
+    val goalTimeSec: Int = DEFAULT_GOAL_TIME_SEC,
+    /** Цель по повторам. */
+    val goalReps: Int = DEFAULT_GOAL_REPS,
+    /** Вес гири для подсчёта объёма подхода. */
+    val weightKg: Int = DEFAULT_WEIGHT_KG,
+    /** Формат отсчёта: секундомер или обратный отсчёт. */
+    val timerFormat: CounterTimerFormat = CounterTimerFormat.COUNTDOWN,
+    /** По умолчанию счёт без записи видео. */
+    val captureMode: SetCaptureMode = SetCaptureMode.COUNT,
+
     val running: Boolean = false,
+    /** Цель достигнута и счётчик остановлен автоматически. */
+    val finished: Boolean = false,
     val total: Int = 0,
     val left: Int = 0,
     val right: Int = 0,
@@ -42,41 +61,76 @@ data class CameraRepUiState(
     val fixationSec: Float = FixationPreset.COMPETITION.seconds,
     val lastFixationSec: Float = 0f,
     val lastRepConfident: Boolean = true,
+    /** Значение в оверлее: секунды или оставшиеся повторы. */
+    val displayValue: Int = DEFAULT_GOAL_TIME_SEC,
+    val remainingReps: Int = DEFAULT_GOAL_REPS,
     val frame: PoseFrame? = null,
     val error: String? = null,
-    val captureMode: SetCaptureMode = SetCaptureMode.NONE,
-    val setDurationSec: Int = 0,
-    val setRemainingSec: Int = 0,
-    /**Автоподсчёт можно выключить и считать только вручную.*/
+
+    /** Автоподсчёт можно выключить и считать только вручную. */
     val autoCount: Boolean = true,
-    /**Темп метронома, оборотов в минуту.*/
+    /** Темп метронома, оборотов в минуту. */
     val tempoRpm: Int = 15,
     val audioMetronome: Boolean = false,
     val visualMetronome: Boolean = false,
-    /**Короткая вспышка на каждом ударе метронома.*/
+    /** Короткая вспышка на каждом ударе метронома. */
     val beat: Boolean = false
 ) {
     val elapsedSec: Int get() = (elapsedMs / 1000L).toInt()
+
+    /** При цели «повторы» и обратном отсчёте показываем оставшиеся повторы. */
+    val displayAsTime: Boolean
+        get() = goal == CounterGoal.TIME || timerFormat == CounterTimerFormat.STOPWATCH
+
+    /** Объём подхода с учётом числа гирь и коэффициента упражнения. */
+    val volumeKg: Double
+        get() = weightKg.toDouble() * total * exercise.sectionType.coefficient
+
     val rpm: Int
         get() = if (elapsedSec > 0) {
             (total * 60.0 / elapsedSec).roundToInt()
         } else {
             0
         }
+
+    companion object {
+        const val DEFAULT_GOAL_TIME_SEC = 60
+        const val DEFAULT_GOAL_REPS = 20
+        const val DEFAULT_WEIGHT_KG = 24
+        const val MAX_GOAL_TIME_SEC = 2 * 60 * 60
+        const val MAX_GOAL_REPS = 1000
+        const val MIN_WEIGHT_KG = 4
+        const val MAX_WEIGHT_KG = 48
+    }
 }
 
 class CameraRepViewModel(application: Application) : AndroidViewModel(application) {
 
+    private var counter = RepCounter(
+        ExerciseProfile.of(RepExercise.JERK, FixationPreset.COMPETITION)
+    )
     private val _state = MutableStateFlow(CameraRepUiState())
     val state: StateFlow<CameraRepUiState> = _state.asStateFlow()
 
-    private var counter = RepCounter(ExerciseProfile.of(RepExercise.JERK, FixationPreset.COMPETITION))
     private var poseSource: MediaPipePoseSource? = null
     private var ticker: Job? = null
     private var startedAt = 0L
     private var lastEvent: RepEvent? = null
     private var lastBeatIndex = -1L
     private var tone: ToneGenerator? = null
+
+    init {
+        // Вес и порог фиксации берём из настроек приложения как значения по умолчанию.
+        val settings = runCatching { (getApplication() as GiriBroApp).settings.state.value }
+            .getOrNull()
+        val preset = settings?.fixationPreset ?: FixationPreset.COMPETITION
+        counter = RepCounter(ExerciseProfile.of(RepExercise.JERK, preset))
+        _state.value = CameraRepUiState(
+            preset = preset,
+            fixationSec = counter.profile.effectiveFixationSec,
+            weightKg = settings?.defaultWeight ?: CameraRepUiState.DEFAULT_WEIGHT_KG
+        )
+    }
 
     fun poseAnalyzer(): MediaPipePoseSource? {
         poseSource?.let { return it }
@@ -91,38 +145,57 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         }.getOrNull()
     }
 
+    // --- Настройки подхода: все применяются кнопкой «Старт». ---
+
+    fun setGoal(goal: CounterGoal) {
+        if (_state.value.goal == goal) return
+        reconfigure { it.copy(goal = goal) }
+    }
+
+    fun setGoalTimeSec(seconds: Int) {
+        val value = seconds.coerceIn(1, CameraRepUiState.MAX_GOAL_TIME_SEC)
+        if (_state.value.goalTimeSec == value) return
+        reconfigure { it.copy(goalTimeSec = value) }
+    }
+
+    fun setGoalReps(reps: Int) {
+        val value = reps.coerceIn(1, CameraRepUiState.MAX_GOAL_REPS)
+        if (_state.value.goalReps == value) return
+        reconfigure { it.copy(goalReps = value) }
+    }
+
+    fun setWeightKg(weightKg: Int) {
+        val value = weightKg.coerceIn(
+            CameraRepUiState.MIN_WEIGHT_KG,
+            CameraRepUiState.MAX_WEIGHT_KG
+        )
+        _state.value = _state.value.copy(weightKg = value)
+    }
+
+    fun setTimerFormat(format: CounterTimerFormat) {
+        if (_state.value.timerFormat == format) return
+        reconfigure { it.copy(timerFormat = format) }
+    }
+
+    fun setCaptureMode(mode: SetCaptureMode) {
+        if (_state.value.captureMode == mode) return
+        reconfigure { it.copy(captureMode = mode) }
+    }
+
     fun setExercise(exercise: RepExercise) {
         if (_state.value.exercise == exercise) return
-        stop()
         counter = RepCounter(ExerciseProfile.of(exercise, _state.value.preset))
-        _state.value = _state.value.copy(
-            exercise = exercise,
-            fixationSec = counter.profile.effectiveFixationSec,
-            total = 0,
-            left = 0,
-            right = 0,
-            shortFixations = 0,
-            fixationProgress = 0f,
-            elapsedMs = 0L,
-            activeSides = emptySet()
-        )
+        reconfigure {
+            it.copy(exercise = exercise, fixationSec = counter.profile.effectiveFixationSec)
+        }
     }
 
     fun setPreset(preset: FixationPreset) {
         if (_state.value.preset == preset) return
-        stop()
         counter = RepCounter(ExerciseProfile.of(_state.value.exercise, preset))
-        _state.value = _state.value.copy(
-            preset = preset,
-            fixationSec = counter.profile.effectiveFixationSec,
-            total = 0,
-            left = 0,
-            right = 0,
-            shortFixations = 0,
-            fixationProgress = 0f,
-            elapsedMs = 0L,
-            activeSides = emptySet()
-        )
+        reconfigure {
+            it.copy(preset = preset, fixationSec = counter.profile.effectiveFixationSec)
+        }
     }
 
     fun setAutoCount(enabled: Boolean) {
@@ -131,16 +204,6 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
             autoCount = enabled,
             fixationProgress = 0f,
             activeSides = emptySet()
-        )
-    }
-
-    fun setCaptureMode(mode: SetCaptureMode) {
-        if (_state.value.captureMode == mode) return
-        stop()
-        _state.value = _state.value.copy(
-            captureMode = mode,
-            setDurationSec = 0,
-            setRemainingSec = 0
         )
     }
 
@@ -158,12 +221,13 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         _state.value = _state.value.copy(visualMetronome = enabled)
     }
 
-    /** Автостарт подхода, открытого из таймера. */
+    /** Автостарт подхода, открытого из таймера: цель — заданное время. */
     fun startSet(mode: SetCaptureMode, durationSec: Int) {
         _state.value = _state.value.copy(
-            captureMode = mode,
-            setDurationSec = durationSec.coerceAtLeast(0),
-            setRemainingSec = durationSec.coerceAtLeast(0)
+            goal = CounterGoal.TIME,
+            goalTimeSec = durationSec.coerceAtLeast(0),
+            timerFormat = CounterTimerFormat.COUNTDOWN,
+            captureMode = mode
         )
         start()
     }
@@ -174,46 +238,32 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         startedAt = SystemClock.elapsedRealtime()
         lastBeatIndex = -1L
         if (_state.value.audioMetronome) ensureTone()
-        _state.value = _state.value.copy(
-            running = true,
-            total = 0,
-            left = 0,
-            right = 0,
-            shortFixations = 0,
-            fixationProgress = 0f,
-            elapsedMs = 0L,
-            setRemainingSec = _state.value.setDurationSec,
-            activeSides = emptySet(),
-            lastFixationSec = 0f,
-            lastRepConfident = true
-        )
+        _state.value = freshCounts(_state.value).copy(running = true)
         ticker?.cancel()
         ticker = viewModelScope.launch {
             while (isActive) {
                 delay(200)
                 if (!_state.value.running) break
                 val elapsed = SystemClock.elapsedRealtime() - startedAt
-                val duration = _state.value.setDurationSec
-                val remaining = if (duration > 0) {
-                    (duration - elapsed / 1000L).coerceAtLeast(0L).toInt()
-                } else {
-                    0
-                }
-                val intervalMs = 60_000L / _state.value.tempoRpm.coerceIn(6, 60)
+                val elapsedSec = (elapsed / 1000L).toInt()
+                val current = _state.value
+                val intervalMs = 60_000L / current.tempoRpm.coerceIn(6, 60)
                 val beatIndex = elapsed / intervalMs
                 if (beatIndex != lastBeatIndex) {
                     lastBeatIndex = beatIndex
-                    if (_state.value.audioMetronome) {
+                    if (current.audioMetronome) {
                         runCatching { ensureTone()?.startTone(ToneGenerator.TONE_PROP_BEEP, 60) }
                     }
                 }
-                _state.value = _state.value.copy(
+                val reached = goalReached(current, elapsedSec, current.total)
+                _state.value = current.copy(
                     elapsedMs = elapsed,
-                    setRemainingSec = remaining,
-                    beat = _state.value.visualMetronome && (elapsed % intervalMs) < 200L
+                    displayValue = displayValueFor(current, elapsedSec, current.total),
+                    remainingReps = (current.goalReps - current.total).coerceAtLeast(0),
+                    beat = current.visualMetronome && (elapsed % intervalMs) < 200L
                 )
-                if (duration > 0 && remaining == 0) {
-                    stop()
+                if (reached) {
+                    finish()
                     break
                 }
             }
@@ -234,18 +284,7 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
     fun reset() {
         stop()
         counter.reset()
-        _state.value = _state.value.copy(
-            total = 0,
-            left = 0,
-            right = 0,
-            shortFixations = 0,
-            fixationProgress = 0f,
-            elapsedMs = 0L,
-            activeSides = emptySet(),
-            lastFixationSec = 0f,
-            lastRepConfident = true,
-            error = null
-        )
+        _state.value = freshCounts(_state.value).copy(error = null)
     }
 
     fun addRep() {
@@ -293,7 +332,10 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun applySnapshot(snapshot: RepSnapshot) {
-        _state.value = _state.value.copy(
+        val current = _state.value
+        val elapsedSec = current.elapsedSec
+        val reached = goalReached(current, elapsedSec, snapshot.total)
+        _state.value = current.copy(
             total = snapshot.total,
             left = snapshot.left,
             right = snapshot.right,
@@ -302,8 +344,11 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
             tracking = snapshot.tracking,
             activeSides = snapshot.activeSides,
             lastFixationSec = snapshot.lastFixationSec,
-            lastRepConfident = snapshot.lastRepConfident
+            lastRepConfident = snapshot.lastRepConfident,
+            remainingReps = (current.goalReps - snapshot.total).coerceAtLeast(0),
+            displayValue = displayValueFor(current, elapsedSec, snapshot.total)
         )
+        if (current.running && reached) finish()
     }
 
     private fun onPoseError(error: Throwable) {
@@ -326,6 +371,60 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         _state.value = _state.value.copy(error = "$context\n$details")
+    }
+
+    /** Сброс результатов перед стартом или при изменении настроек. */
+    private fun freshCounts(state: CameraRepUiState): CameraRepUiState = state.copy(
+        total = 0,
+        left = 0,
+        right = 0,
+        shortFixations = 0,
+        fixationProgress = 0f,
+        elapsedMs = 0L,
+        activeSides = emptySet(),
+        lastFixationSec = 0f,
+        lastRepConfident = true,
+        finished = false,
+        beat = false,
+        remainingReps = state.goalReps,
+        displayValue = displayValueFor(state, 0, 0)
+    )
+
+    /** Изменение настроек останавливает подход и обнуляет его результаты. */
+    private fun reconfigure(change: (CameraRepUiState) -> CameraRepUiState) {
+        stop()
+        _state.value = freshCounts(change(_state.value))
+    }
+
+    /** Что показывать в оверлее: время или оставшиеся повторы. */
+    private fun displayValueFor(state: CameraRepUiState, elapsedSec: Int, total: Int): Int =
+        when {
+            state.goal == CounterGoal.REPS &&
+                state.timerFormat == CounterTimerFormat.COUNTDOWN ->
+                (state.goalReps - total).coerceAtLeast(0)
+
+            state.timerFormat == CounterTimerFormat.STOPWATCH || state.goalTimeSec <= 0 ->
+                elapsedSec.coerceAtLeast(0)
+
+            else -> (state.goalTimeSec - elapsedSec).coerceAtLeast(0)
+        }
+
+    private fun goalReached(state: CameraRepUiState, elapsedSec: Int, total: Int): Boolean =
+        when (state.goal) {
+            CounterGoal.TIME -> state.goalTimeSec > 0 && elapsedSec >= state.goalTimeSec
+            CounterGoal.REPS -> state.goalReps > 0 && total >= state.goalReps
+        }
+
+    private fun finish() {
+        ticker?.cancel()
+        ticker = null
+        val current = _state.value
+        _state.value = current.copy(
+            running = false,
+            finished = true,
+            elapsedMs = SystemClock.elapsedRealtime() - startedAt,
+            beat = false
+        )
     }
 
     private fun ensureTone(): ToneGenerator? {

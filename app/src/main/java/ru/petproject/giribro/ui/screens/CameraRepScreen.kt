@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,7 +64,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -91,7 +91,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.petproject.giribro.GiriBroApp
+import ru.petproject.giribro.data.CounterGoal
+import ru.petproject.giribro.data.CounterTimerFormat
 import ru.petproject.giribro.data.SetCaptureMode
+import ru.petproject.giribro.data.asTonnage
+import ru.petproject.giribro.util.formatClockPadded
 import ru.petproject.giribro.vision.FixationPreset
 import ru.petproject.giribro.vision.PoseFrame
 import ru.petproject.giribro.vision.PoseIndex
@@ -132,7 +136,7 @@ fun CameraRepScreen(
     var activeRecording by remember { mutableStateOf<Recording?>(null) }
     var videoStatus by remember { mutableStateOf<String?>(null) }
     var cameraReady by remember { mutableStateOf(false) }
-    var selectedDurationSec by rememberSaveable { mutableIntStateOf(0) }
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
     val recorder = remember { Recorder.Builder().build() }
     val videoCapture = remember { VideoCapture.withOutput(recorder) }
     val currentRecording = rememberUpdatedState(activeRecording)
@@ -302,13 +306,25 @@ fun CameraRepScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            QuickStartCard(
+            CounterSetupCard(
                 state = state,
                 vm = vm,
-                durationSec = selectedDurationSec,
-                onDurationChange = { selectedDurationSec = it },
                 onBack = onBack,
-                onStart = { vm.startSet(state.captureMode, selectedDurationSec) }
+                onStart = { vm.start() },
+                videoContent = {
+                    if (state.captureMode == SetCaptureMode.RECORD) {
+                        Spacer(Modifier.height(8.dp))
+                        VideoCard(
+                            folderUri = videoFolderUri,
+                            isRecording = isRecording,
+                            status = videoStatus,
+                            onPickFolder = { folderPicker.launch(null) },
+                            onToggleRecording = {
+                                if (isRecording) stopVideoRecording() else startVideoRecording()
+                            }
+                        )
+                    }
+                }
             )
         }
 
@@ -324,22 +340,13 @@ fun CameraRepScreen(
             )
         }
 
-        if (state.captureMode == SetCaptureMode.RECORD) {
-            item {
-                VideoCard(
-                    folderUri = videoFolderUri,
-                    isRecording = isRecording,
-                    status = videoStatus,
-                    onPickFolder = { folderPicker.launch(null) },
-                    onToggleRecording = {
-                        if (isRecording) stopVideoRecording() else startVideoRecording()
-                    }
-                )
-            }
-        }
-
         item {
-            CounterSettingsCard(state = state, vm = vm)
+            AdvancedCounterCard(
+                state = state,
+                vm = vm,
+                expanded = showAdvanced,
+                onToggle = { showAdvanced = !showAdvanced }
+            )
         }
 
         item {
@@ -398,282 +405,461 @@ fun CameraRepScreen(
     }
 }
 
-private fun formatCounterDuration(sec: Int): String = if (sec <= 0) {
-    "∞"
-} else {
-    "${sec / 60}:${(sec % 60).toString().padStart(2, '0')}"
+/** Один пронумерованный шаг настройки подхода. */
+@Composable
+private fun SetupStep(
+    number: Int,
+    title: String,
+    content: @Composable () -> Unit
+) {
+    Row(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                number.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            content()
+        }
+    }
 }
 
-/** Экран быстрого старта: время, повторы и главная кнопка «Старт». */
 @Composable
-private fun QuickStartCard(
+private fun NumberStepper(
+    label: String,
+    value: Int,
+    onDec: () -> Unit,
+    onInc: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(
+                onClick = onDec,
+                modifier = Modifier.size(40.dp),
+                contentPadding = PaddingValues(0.dp)
+            ) { Text("−") }
+            Text(
+                value.toString(),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(min = 48.dp)
+            )
+            OutlinedButton(
+                onClick = onInc,
+                modifier = Modifier.size(40.dp),
+                contentPadding = PaddingValues(0.dp)
+            ) { Text("+") }
+        }
+    }
+}
+
+/**
+ * Экран вкладки «Счётчик». Шаги идут строго в заданном порядке:
+ * цель → значение цели → упражнение → вес → счёт/видео → формат → старт.
+ */
+@Composable
+private fun CounterSetupCard(
     state: CameraRepUiState,
     vm: CameraRepViewModel,
-    durationSec: Int,
-    onDurationChange: (Int) -> Unit,
     onBack: () -> Unit,
-    onStart: () -> Unit
+    onStart: () -> Unit,
+    videoContent: @Composable () -> Unit
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp)
     ) {
-        Column(Modifier.padding(16.dp)) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Назад")
                 }
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "БЫСТРЫЙ СТАРТ",
+                        "СЧЁТЧИК",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         letterSpacing = 2.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Счётчик повторений",
+                        "Настройте подход и нажмите «Старт»",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = if (state.running && state.setDurationSec > 0) {
-                            "${state.setRemainingSec} с"
-                        } else {
-                            formatCounterDuration(durationSec)
-                        },
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        "Время",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            SetupStep(1, "Цель") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CounterGoal.entries.forEach { goal ->
+                        FilterChip(
+                            selected = state.goal == goal,
+                            onClick = { vm.setGoal(goal) },
+                            label = { Text(goal.label) }
+                        )
+                    }
                 }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            }
+
+            SetupStep(
+                2,
+                if (state.goal == CounterGoal.TIME) "Время (мин:сек)" else "Количество повторов"
+            ) {
+                if (state.goal == CounterGoal.TIME) {
                     Text(
-                        text = state.total.toString(),
-                        style = MaterialTheme.typography.displayMedium,
+                        text = formatClockPadded(state.goalTimeSec),
+                        style = MaterialTheme.typography.displayMedium.copy(fontSize = 48.sp),
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        NumberStepper(
+                            label = "Минуты",
+                            value = state.goalTimeSec / 60,
+                            onDec = { vm.setGoalTimeSec(state.goalTimeSec - 60) },
+                            onInc = { vm.setGoalTimeSec(state.goalTimeSec + 60) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        NumberStepper(
+                            label = "Секунды",
+                            value = state.goalTimeSec % 60,
+                            onDec = { vm.setGoalTimeSec(state.goalTimeSec - 5) },
+                            onInc = { vm.setGoalTimeSec(state.goalTimeSec + 5) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(30, 60, 180, 300).forEach { seconds ->
+                            FilterChip(
+                                selected = state.goalTimeSec == seconds,
+                                onClick = { vm.setGoalTimeSec(seconds) },
+                                label = { Text(formatClockPadded(seconds)) }
+                            )
+                        }
+                    }
+                } else {
                     Text(
-                        "Повторения",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = state.goalReps.toString(),
+                        style = MaterialTheme.typography.displayMedium.copy(fontSize = 48.sp),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
                     )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        NumberStepper(
+                            label = "Повторы",
+                            value = state.goalReps,
+                            onDec = { vm.setGoalReps(state.goalReps - 1) },
+                            onInc = { vm.setGoalReps(state.goalReps + 1) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(10, 20, 30, 50, 100).forEach { reps ->
+                            FilterChip(
+                                selected = state.goalReps == reps,
+                                onClick = { vm.setGoalReps(reps) },
+                                label = { Text(reps.toString()) }
+                            )
+                        }
+                    }
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
-            Text(
-                "Длительность подхода",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(0, 30, 60, 180, 300).forEach { seconds ->
+            SetupStep(3, "Упражнение") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RepExercise.entries.forEach { exercise ->
+                        FilterChip(
+                            selected = state.exercise == exercise,
+                            onClick = { vm.setExercise(exercise) },
+                            label = { Text(exercise.short) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = when (state.exercise) {
+                        RepExercise.JERK ->
+                            "Толчок: как ДЦ — короткое подтверждение замка без сброса в вис."
+
+                        RepExercise.LONG_CYCLE ->
+                            "ДЦ: замок → сброс в вис → заброс на грудь. Следующий повтор " +
+                                "считается только после виса."
+
+                        RepExercise.SNATCH ->
+                            "Рывок: руки поочерёдно. Пока одна вверху, вторая не считается."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            SetupStep(4, "Вес гири") {
+                Text(
+                    text = "${state.weightKg} кг",
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    NumberStepper(
+                        label = "Килограммы",
+                        value = state.weightKg,
+                        onDec = { vm.setWeightKg(state.weightKg - 1) },
+                        onInc = { vm.setWeightKg(state.weightKg + 1) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(16, 24, 32).forEach { weight ->
+                        FilterChip(
+                            selected = state.weightKg == weight,
+                            onClick = { vm.setWeightKg(weight) },
+                            label = { Text("$weight кг") }
+                        )
+                    }
+                }
+            }
+
+            SetupStep(5, "Подход") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
-                        selected = durationSec == seconds,
-                        onClick = { onDurationChange(seconds) },
-                        label = { Text(formatCounterDuration(seconds)) }
+                        selected = state.captureMode == SetCaptureMode.COUNT,
+                        onClick = { vm.setCaptureMode(SetCaptureMode.COUNT) },
+                        label = { Text("Счёт") }
+                    )
+                    FilterChip(
+                        selected = state.captureMode == SetCaptureMode.RECORD,
+                        onClick = { vm.setCaptureMode(SetCaptureMode.RECORD) },
+                        label = { Text("Запись видео") }
                     )
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (state.captureMode == SetCaptureMode.RECORD) {
+                        "Видео сохраняется только в выбранную вами папку."
+                    } else {
+                        "Камера на весь экран, видео не записывается."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                videoContent()
             }
 
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Отслеживать повторения", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "Автоматический подсчёт по фронтальной камере",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            SetupStep(6, "Формат таймера") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CounterTimerFormat.entries.forEach { format ->
+                        FilterChip(
+                            selected = state.timerFormat == format,
+                            onClick = { vm.setTimerFormat(format) },
+                            label = { Text(format.label) }
+                        )
+                    }
                 }
-                Switch(
-                    checked = state.autoCount,
-                    onCheckedChange = { vm.setAutoCount(it) }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (state.timerFormat == CounterTimerFormat.STOPWATCH) {
+                        "Время идёт вверх."
+                    } else if (state.goal == CounterGoal.REPS) {
+                        "Показываем, сколько повторов осталось."
+                    } else {
+                        "Время идёт вниз до нуля."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            Spacer(Modifier.height(14.dp))
-            Button(
-                onClick = { if (state.running) vm.stop() else onStart() },
-                modifier = Modifier.fillMaxWidth().height(52.dp)
-            ) {
-                Icon(
-                    if (state.running) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                    contentDescription = null
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(if (state.running) "Стоп" else "Старт", fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { vm.removeRep() }, modifier = Modifier.weight(1f)) {
-                    Text("−1")
+            SetupStep(7, "Запуск") {
+                if (state.finished || (!state.running && state.total > 0)) {
+                    ResultSummary(state = state)
+                    Spacer(Modifier.height(10.dp))
                 }
-                OutlinedButton(onClick = { vm.addRep() }, modifier = Modifier.weight(1f)) {
-                    Text("+1")
+                Button(
+                    onClick = { if (state.running) vm.stop() else onStart() },
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) {
+                    Icon(
+                        if (state.running) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                        contentDescription = null
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (state.running) "Стоп" else "Старт", fontWeight = FontWeight.Bold)
                 }
-                OutlinedButton(onClick = { vm.reset() }, modifier = Modifier.weight(1f)) {
-                    Text("Сброс")
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { vm.removeRep() },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("−1") }
+                    OutlinedButton(
+                        onClick = { vm.addRep() },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("+1") }
+                    OutlinedButton(
+                        onClick = { vm.reset() },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Сброс") }
                 }
             }
         }
     }
 }
 
-/** Настройки, с которыми запускается счётчик. Сигнала смены рук здесь нет. */
 @Composable
-private fun CounterSettingsCard(state: CameraRepUiState, vm: CameraRepViewModel) {
+private fun ResultSummary(state: CameraRepUiState) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(
+                if (state.finished) "Цель достигнута" else "Итог подхода",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                SummaryValue("Повторы", state.total.toString())
+                SummaryValue("Время", formatClockPadded(state.elapsedSec))
+                SummaryValue("Объём", state.volumeKg.asTonnage())
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryValue(label: String, value: String) {
+    Column {
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+        )
+    }
+}
+
+/** Второстепенные настройки: порог фиксации и метроном. */
+@Composable
+private fun AdvancedCounterCard(
+    state: CameraRepUiState,
+    vm: CameraRepViewModel,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp)
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text("Настройки", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(12.dp))
-
-            Text("Упражнение", style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RepExercise.entries.forEach { exercise ->
-                    FilterChip(
-                        selected = state.exercise == exercise,
-                        onClick = { vm.setExercise(exercise) },
-                        label = { Text(exercise.short) }
-                    )
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = when (state.exercise) {
-                    RepExercise.JERK ->
-                        "Толчок: как ДЦ — короткое подтверждение замка без сброса в вис."
-
-                    RepExercise.LONG_CYCLE ->
-                        "ДЦ: замок → сброс в вис → заброс на грудь. Следующий повтор " +
-                            "считается только после виса."
-
-                    RepExercise.SNATCH ->
-                        "Рывок: руки поочерёдно. Пока одна вверху, вторая не считается."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(Modifier.height(14.dp))
-            Text("Порог фиксации", style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FixationPreset.entries.forEach { preset ->
-                    FilterChip(
-                        selected = state.preset == preset,
-                        onClick = { vm.setPreset(preset) },
-                        label = { Text("${preset.label} · ${preset.seconds.toString().replace('.', ',')} с") }
-                    )
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = if (state.exercise == RepExercise.LONG_CYCLE) {
-                    "В ДЦ замок подтверждается коротко (${state.fixationSec} с): " +
-                        "гири сразу уходят в вис."
-                } else {
-                    state.preset.hint
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(Modifier.height(14.dp))
-            Text("Режим подхода", style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = state.captureMode == SetCaptureMode.NONE,
-                    onClick = { vm.setCaptureMode(SetCaptureMode.NONE) },
-                    label = { Text("Обычный") }
+            TextButton(onClick = onToggle, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    if (expanded) "Скрыть дополнительные настройки"
+                    else "Дополнительные настройки",
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Start
                 )
-                FilterChip(
-                    selected = state.captureMode == SetCaptureMode.COUNT,
-                    onClick = { vm.setCaptureMode(SetCaptureMode.COUNT) },
-                    label = { Text("Счёт") }
-                )
-                FilterChip(
-                    selected = state.captureMode == SetCaptureMode.RECORD,
-                    onClick = { vm.setCaptureMode(SetCaptureMode.RECORD) },
-                    label = { Text("Запись") }
-                )
+                Text(if (expanded) "−" else "+")
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = when (state.captureMode) {
-                    SetCaptureMode.NONE -> "Камера и счёт в обычном окне приложения."
-                    SetCaptureMode.COUNT -> "Камера на весь экран, время внизу, без записи видео."
-                    SetCaptureMode.RECORD -> "Камера на весь экран, видео — в выбранную папку."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Темп", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "${state.tempoRpm} rpm — частота метронома",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                OutlinedButton(onClick = { vm.setTempo(state.tempoRpm - 1) }) { Text("−") }
-                Spacer(Modifier.width(6.dp))
-                OutlinedButton(onClick = { vm.setTempo(state.tempoRpm + 1) }) { Text("+") }
-            }
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Аудио-метроном", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "Звук на каждом ударе темпа",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = state.audioMetronome,
-                    onCheckedChange = { vm.setAudioMetronome(it) }
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Визуальный метроном", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "Вспышка на каждом ударе темпа",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (state.visualMetronome && state.beat) {
-                        Spacer(Modifier.height(4.dp))
-                        Text("●", color = MaterialTheme.colorScheme.primary)
+            if (expanded) {
+                Spacer(Modifier.height(8.dp))
+                Text("Порог фиксации", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FixationPreset.entries.forEach { preset ->
+                        FilterChip(
+                            selected = state.preset == preset,
+                            onClick = { vm.setPreset(preset) },
+                            label = {
+                                Text(
+                                    "${preset.label} · " +
+                                        "${preset.seconds.toString().replace('.', ',')} с"
+                                )
+                            }
+                        )
                     }
                 }
-                Switch(
-                    checked = state.visualMetronome,
-                    onCheckedChange = { vm.setVisualMetronome(it) }
-                )
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Темп", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "${state.tempoRpm} rpm — частота метронома",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedButton(onClick = { vm.setTempo(state.tempoRpm - 1) }) { Text("−") }
+                    Spacer(Modifier.width(6.dp))
+                    OutlinedButton(onClick = { vm.setTempo(state.tempoRpm + 1) }) { Text("+") }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Аудио-метроном", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Звук на каждом ударе темпа",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = state.audioMetronome,
+                        onCheckedChange = { vm.setAudioMetronome(it) }
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Визуальный метроном", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Вспышка на каждом ударе темпа",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (state.visualMetronome && state.beat) {
+                            Text("●", color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    Switch(
+                        checked = state.visualMetronome,
+                        onCheckedChange = { vm.setVisualMetronome(it) }
+                    )
+                }
             }
         }
     }
@@ -928,19 +1114,21 @@ private fun FullScreenCameraRep(
                 .padding(start = 24.dp, end = 24.dp, top = 64.dp, bottom = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            val elapsed = (state.elapsedMs / 1000L).toInt()
-            val timeText = if (state.setDurationSec > 0) {
-                "${state.setRemainingSec} с"
+            val timeText = if (state.displayAsTime) {
+                formatClockPadded(state.displayValue)
             } else {
-                "${elapsed / 60}:${(elapsed % 60).toString().padStart(2, '0')}"
+                state.displayValue.toString()
             }
             Text(
                 text = timeText,
-                style = MaterialTheme.typography.displayLarge,
-                color = if (state.setDurationSec > 0 && state.setRemainingSec <= 5) {
-                    Color(0xFFFFC857)
-                } else {
-                    Color.White
+                style = MaterialTheme.typography.displayLarge.copy(fontSize = 96.sp),
+                color = when {
+                    state.finished -> Color(0xFFC9F24A)
+                    state.goal == CounterGoal.TIME &&
+                        state.timerFormat == CounterTimerFormat.COUNTDOWN &&
+                        state.displayValue in 1..5 -> Color(0xFFFFC857)
+
+                    else -> Color.White
                 },
                 fontWeight = FontWeight.Bold
             )
