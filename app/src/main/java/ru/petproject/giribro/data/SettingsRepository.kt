@@ -31,7 +31,11 @@ data class Settings(
     val weeklyGoal: Int = 3,
     val defaultWeight: Int = 24,
     val statsPeriod: StatsPeriod = StatsPeriod.MONTH,
-    val fixationPreset: FixationPreset = FixationPreset.COMPETITION
+    val fixationPreset: FixationPreset = FixationPreset.COMPETITION,
+    /** Быстрые значения веса/повторов/времени для каждого гиревого упражнения. */
+    val quickValues: Map<SectionType, SetQuickValues> = SetQuickValues.defaults,
+    /** Названия упражнений ОФП, которые вводил пользователь. */
+    val gppExercises: List<String> = emptyList()
 )
 
 class SettingsRepository(context: Context) {
@@ -68,8 +72,66 @@ class SettingsRepository(context: Context) {
         }.getOrDefault(StatsPeriod.MONTH),
         fixationPreset = FixationPreset.fromName(
             runCatching { prefs.getString(KEY_FIXATION_PRESET, null) }.getOrNull()
+        ),
+        quickValues = QUICK_EXERCISES.associateWith { type ->
+            loadQuickValues(type)
+        },
+        gppExercises = SetQuickValues.sanitizeNames(
+            runCatching {
+                prefs.getStringSet(KEY_GPP_EXERCISES, emptySet()).orEmpty()
+            }.getOrDefault(emptySet()).toList()
         )
     )
+
+    private fun loadQuickValues(type: SectionType): SetQuickValues {
+        val fallback = SetQuickValues.forType(type)
+        val raw = runCatching {
+            prefs.getString(KEY_QUICK_PREFIX + type.name, null)
+        }.getOrNull() ?: return fallback
+        val parts = raw.split('|')
+        if (parts.size != 3) return fallback
+        fun parse(values: String, limit: Int): List<Int> = values
+            .split(',')
+            .mapNotNull { it.trim().toIntOrNull() }
+            .filter { it in 1..limit }
+            .distinct()
+            .take(SetQuickValues.MAX_VALUES)
+        return SetQuickValues.sanitize(
+            SetQuickValues(
+                weights = parse(parts[0], 200),
+                reps = parse(parts[1], 999),
+                durationsSec = parse(parts[2], 86_400)
+            )
+        )
+    }
+
+    private fun encodeQuickValues(values: SetQuickValues): String = listOf(
+        values.weights.joinToString(","),
+        values.reps.joinToString(","),
+        values.durationsSec.joinToString(",")
+    ).joinToString("|")
+
+    /** Сохраняет быстрые значения для одного упражнения. */
+    fun setQuickValues(type: SectionType, values: SetQuickValues) {
+        val safe = SetQuickValues.sanitize(values)
+        val editor = prefs.edit()
+            .putString(KEY_QUICK_PREFIX + type.name, encodeQuickValues(safe))
+        _state.value = _state.value.copy(
+            quickValues = _state.value.quickValues + (type to safe)
+        )
+        editor.apply()
+    }
+
+    /** Запоминает введённое название упражнения ОФП для подсказок. */
+    fun addGppExercise(name: String) {
+        val value = name.trim().take(SetQuickValues.MAX_NAME_LENGTH)
+        if (value.isEmpty()) return
+        val current = _state.value.gppExercises
+        if (current.any { it.equals(value, ignoreCase = true) }) return
+        val updated = (listOf(value) + current).take(SetQuickValues.MAX_GPP_EXERCISES)
+        prefs.edit().putStringSet(KEY_GPP_EXERCISES, updated.toSet()).apply()
+        _state.value = _state.value.copy(gppExercises = updated)
+    }
 
     private fun loadProfile(): AthleteProfile {
         val gender = runCatching {
@@ -164,15 +226,26 @@ class SettingsRepository(context: Context) {
     fun apply(settings: Settings) {
         val value = settings.copy(
             weeklyGoal = settings.weeklyGoal.coerceIn(1, 14),
-            defaultWeight = settings.defaultWeight.coerceIn(4, 48)
+            defaultWeight = settings.defaultWeight.coerceIn(4, 48),
+            quickValues = QUICK_EXERCISES.associateWith { type ->
+                SetQuickValues.sanitize(
+                    settings.quickValues[type] ?: SetQuickValues.forType(type)
+                )
+            },
+            gppExercises = SetQuickValues.sanitizeNames(settings.gppExercises)
         )
-        prefs.edit()
+        val editor = prefs.edit()
             .putString(KEY_THEME, value.themeMode.name)
             .putInt(KEY_WEEKLY_GOAL, value.weeklyGoal)
             .putInt(KEY_DEFAULT_WEIGHT, value.defaultWeight)
             .putString(KEY_STATS_PERIOD, value.statsPeriod.name)
             .putString(KEY_FIXATION_PRESET, value.fixationPreset.name)
-            .apply()
+        QUICK_EXERCISES.forEach { type ->
+            val values = value.quickValues.getValue(type)
+            editor.putString(KEY_QUICK_PREFIX + type.name, encodeQuickValues(values))
+        }
+        editor.putStringSet(KEY_GPP_EXERCISES, value.gppExercises.toSet())
+        editor.apply()
         _state.value = value
     }
 
@@ -182,6 +255,13 @@ class SettingsRepository(context: Context) {
         const val KEY_DEFAULT_WEIGHT = "default_weight"
         const val KEY_STATS_PERIOD = "stats_period"
         const val KEY_FIXATION_PRESET = "fixation_preset"
+        const val KEY_QUICK_PREFIX = "quick_set_"
+        const val KEY_GPP_EXERCISES = "gpp_exercises"
+        val QUICK_EXERCISES = listOf(
+            SectionType.JERK,
+            SectionType.LONG_CYCLE,
+            SectionType.SNATCH
+        )
         const val KEY_ATHLETE_GENDER = "athlete_gender"
         const val KEY_ATHLETE_AGE_GROUP = "athlete_age_group"
         const val KEY_ATHLETE_WEIGHT = "athlete_weight"

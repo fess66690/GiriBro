@@ -1,6 +1,7 @@
 package ru.petproject.giribro.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -51,6 +55,7 @@ import ru.petproject.giribro.util.bestStreak
 import ru.petproject.giribro.util.pluralRu
 import ru.petproject.giribro.util.ruDayMonth
 import ru.petproject.giribro.util.weekStart
+import ru.petproject.giribro.vision.RepExercise
 import java.time.LocalDate
 
 private data class ChartBucket(val start: LocalDate, val end: LocalDate)
@@ -68,10 +73,30 @@ private data class TypeStat(
     val durationSec: Int
 )
 
+private data class ExerciseTotals(
+    val tonnageKg: Double,
+    val reps: Int,
+    val durationSec: Int
+)
+
+/** Сводка по тренировке целиком или только по выбранному упражнению. */
+private fun workoutTotals(workout: Workout, type: SectionType?): ExerciseTotals {
+    if (type == null) {
+        return ExerciseTotals(workout.tonnageKg, workout.reps, workout.durationSec)
+    }
+    val sections = workout.sections.filter { it.type == type }
+    return ExerciseTotals(
+        tonnageKg = sections.sumOf { it.tonnageKg },
+        reps = sections.sumOf { it.reps },
+        durationSec = sections.sumOf { it.durationSec }
+    )
+}
+
 private fun buildChart(
     period: StatsPeriod,
     workouts: List<Workout>,
-    today: LocalDate
+    today: LocalDate,
+    selectedType: SectionType? = null
 ): ChartData {
     val buckets: List<ChartBucket>
     val title: String
@@ -117,7 +142,7 @@ private fun buildChart(
     val values = buckets.map { bucket ->
         workouts
             .filter { !it.date.isBefore(bucket.start) && !it.date.isAfter(bucket.end) }
-            .sumOf { it.tonnageKg }
+            .sumOf { workout -> workoutTotals(workout, selectedType).tonnageKg }
     }
     return ChartData(title, leftLabel, "сейчас", values)
 }
@@ -129,6 +154,8 @@ fun StatsScreen(vm: AppViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
 
     val period = settings.statsPeriod
+    var selectedExercise by rememberSaveable { mutableStateOf<RepExercise?>(null) }
+    val selectedType = selectedExercise?.sectionType
     val today = LocalDate.now()
     val periodStart = period.startDate(today)
     val filtered = workouts.filter { workout ->
@@ -136,14 +163,17 @@ fun StatsScreen(vm: AppViewModel) {
             (periodStart == null || !workout.date.isBefore(periodStart))
     }
 
-    val totalTonnage = filtered.sumOf { it.tonnageKg }
-    val totalReps = filtered.sumOf { it.reps }
-    val totalTime = filtered.sumOf { it.durationSec }
-    val averageTime = if (filtered.isEmpty()) 0 else totalTime / filtered.size
-    val bestWorkout = filtered.maxByOrNull { it.tonnageKg }
-    val streak = bestStreak(workouts.map { it.date }, settings.weeklyGoal)
+    // Сводка и график считаются по выбранному упражнению, если оно выбрано.
+    val scoped = filtered.map { workout -> workout to workoutTotals(workout, selectedType) }
+        .filter { selectedType == null || it.second.tonnageKg > 0.0 || it.second.durationSec > 0 }
+    val totalTonnage = scoped.sumOf { it.second.tonnageKg }
+    val totalReps = scoped.sumOf { it.second.reps }
+    val totalTime = scoped.sumOf { it.second.durationSec }
+    val averageTime = if (scoped.isEmpty()) 0 else totalTime / scoped.size
+    val bestEntry = scoped.maxByOrNull { it.second.tonnageKg }
+    val streak = bestStreak(scoped.map { it.first.date }, settings.weeklyGoal)
 
-    val chart = buildChart(period, filtered, today)
+    val chart = buildChart(period, filtered, today, selectedType)
     val maxBar = chart.values.maxOfOrNull { it } ?: 0.0
 
     val byType = SectionType.ordered.mapNotNull { type ->
@@ -175,6 +205,26 @@ fun StatsScreen(vm: AppViewModel) {
                         )
                     }
                 }
+                Spacer(Modifier.height(10.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedExercise == null,
+                        onClick = { selectedExercise = null },
+                        label = { Text("Все упражнения") }
+                    )
+                    RepExercise.entries.forEach { exercise ->
+                        FilterChip(
+                            selected = selectedExercise == exercise,
+                            onClick = {
+                                selectedExercise = if (selectedExercise == exercise) null else exercise
+                            },
+                            label = { Text(exercise.short) }
+                        )
+                    }
+                }
             }
         }
 
@@ -198,7 +248,7 @@ fun StatsScreen(vm: AppViewModel) {
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "${filtered.size} ${pluralRu(filtered.size, "тренировка", "тренировки", "тренировок")} · " +
+                        "${scoped.size} ${pluralRu(scoped.size, "тренировка", "тренировки", "тренировок")} · " +
                             "$totalReps ${pluralRu(totalReps, "подъём", "подъёма", "подъёмов")}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -286,7 +336,13 @@ fun StatsScreen(vm: AppViewModel) {
             ) {
                 Column(Modifier.padding(16.dp)) {
                     SectionTitle("По упражнениям")
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Нажмите на толчок, ДЦ или рывок, чтобы показать только его график.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
                     if (byType.isEmpty()) {
                         Text(
                             "Данных пока нет",
@@ -296,7 +352,28 @@ fun StatsScreen(vm: AppViewModel) {
                     } else {
                         byType.forEachIndexed { index, stat ->
                             val color = sectionColor(stat.type)
-                            Column(Modifier.padding(vertical = 6.dp)) {
+                            val rowExercise = RepExercise.fromSection(stat.type)
+                            val rowSelected = rowExercise != null && rowExercise == selectedExercise
+                            val rowModifier = if (rowExercise != null) {
+                                Modifier.clickable {
+                                    selectedExercise = if (rowSelected) null else rowExercise
+                                }
+                            } else {
+                                Modifier
+                            }
+                            Column(
+                                rowModifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (rowSelected) {
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                                        } else {
+                                            MaterialTheme.colorScheme.surface
+                                        },
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
                                 Row(
                                     Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
@@ -348,8 +425,8 @@ fun StatsScreen(vm: AppViewModel) {
                     RecordRow(
                         icon = Icons.Outlined.Scale,
                         title = "Лучшая тренировка",
-                        value = bestWorkout?.let {
-                            "${it.tonnageKg.asTonnage()} · ${it.date.ruDayMonth()}"
+                        value = bestEntry?.let {
+                            "${it.second.tonnageKg.asTonnage()} · ${it.first.date.ruDayMonth()}"
                         } ?: "—"
                     )
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
@@ -366,7 +443,7 @@ fun StatsScreen(vm: AppViewModel) {
                     RecordRow(
                         icon = Icons.Outlined.EmojiEvents,
                         title = "Средний тоннаж",
-                        value = if (filtered.isEmpty()) "—" else (totalTonnage / filtered.size).asTonnage()
+                        value = if (scoped.isEmpty()) "—" else (totalTonnage / scoped.size).asTonnage()
                     )
                 }
             }

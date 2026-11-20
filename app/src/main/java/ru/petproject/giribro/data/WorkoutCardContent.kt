@@ -85,6 +85,16 @@ data class WorkoutCardContent(
                         type = section.type,
                         title = section.type.label,
                         details = buildString {
+                            if (section.type == SectionType.GPP) {
+                                val names = section.sets
+                                    .map { it.exerciseName.trim() }
+                                    .filter { it.isNotEmpty() }
+                                    .distinct()
+                                if (names.isNotEmpty()) {
+                                    append(names.joinToString(", "))
+                                    append(" · ")
+                                }
+                            }
                             append(section.sets.size)
                             append(" ")
                             append(

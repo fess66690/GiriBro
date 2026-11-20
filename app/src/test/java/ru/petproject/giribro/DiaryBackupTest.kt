@@ -17,6 +17,7 @@ import ru.petproject.giribro.data.NormGender
 import ru.petproject.giribro.data.Section
 import ru.petproject.giribro.data.SectionType
 import ru.petproject.giribro.data.SetEntry
+import ru.petproject.giribro.data.SetQuickValues
 import ru.petproject.giribro.data.Settings
 import ru.petproject.giribro.data.StatsPeriod
 import ru.petproject.giribro.data.ThemeMode
@@ -53,7 +54,15 @@ class DiaryBackupTest {
         weeklyGoal = 5,
         defaultWeight = 32,
         statsPeriod = StatsPeriod.YEAR,
-        fixationPreset = FixationPreset.STRICT
+        fixationPreset = FixationPreset.STRICT,
+        quickValues = SetQuickValues.defaults + mapOf(
+            SectionType.SNATCH to SetQuickValues(
+                weights = listOf(18, 22),
+                reps = listOf(25, 50),
+                durationsSec = listOf(90, 180)
+            )
+        ),
+        gppExercises = listOf("Планка", "Отжимания")
     )
 
     @Test
@@ -73,6 +82,19 @@ class DiaryBackupTest {
         assertEquals(date, backup.workouts.first().date)
         assertEquals("Тяжёлая тренировка", backup.workouts.first().note)
         assertEquals(workouts.first().sections, backup.workouts.first().sections)
+    }
+
+    @Test
+    fun `old backup without quick values uses defaults`() {
+        val root = JSONObject(DiaryBackupJson.encode(emptyList(), settings))
+        val settingsJson = root.getJSONObject("settings")
+        settingsJson.remove("quickValues")
+        settingsJson.remove("gppExercises")
+
+        val restored = DiaryBackupJson.decode(root.toString()).settings!!
+
+        assertEquals(SetQuickValues.defaults, restored.quickValues)
+        assertTrue(restored.gppExercises.isEmpty())
     }
 
     @Test

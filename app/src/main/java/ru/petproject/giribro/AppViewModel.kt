@@ -28,6 +28,8 @@ import ru.petproject.giribro.data.DiaryBackup
 import ru.petproject.giribro.data.DiaryBackupJson
 import ru.petproject.giribro.data.NormAgeGroup
 import ru.petproject.giribro.data.NormGender
+import ru.petproject.giribro.data.SectionType
+import ru.petproject.giribro.data.SetQuickValues
 import ru.petproject.giribro.data.Settings
 import ru.petproject.giribro.data.StatsPeriod
 import ru.petproject.giribro.data.ThemeMode
@@ -480,6 +482,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun setFixationPreset(preset: FixationPreset) {
         updateSetting("Не удалось сохранить порог фиксации") {
             app.settings.setFixationPreset(preset)
+        }
+    }
+
+    fun setQuickValues(type: SectionType, values: SetQuickValues) {
+        updateSetting("Не удалось сохранить быстрые значения") {
+            app.settings.setQuickValues(type, values)
+        }
+    }
+
+    fun addGppExercise(name: String) {
+        updateSetting("Не удалось сохранить упражнение") {
+            app.settings.addGppExercise(name)
         }
     }
 

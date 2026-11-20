@@ -44,6 +44,11 @@ object DiaryBackupJson {
     private const val SALT_BYTES = 16
     private const val KEY_BITS = 256
     private const val GCM_TAG_BITS = 128
+    private val QUICK_TYPES = listOf(
+        SectionType.JERK,
+        SectionType.LONG_CYCLE,
+        SectionType.SNATCH
+    )
 
     fun encode(
         workouts: List<Workout>,
@@ -120,6 +125,19 @@ object DiaryBackupJson {
                     .put("defaultWeight", settings.defaultWeight)
                     .put("statsPeriod", settings.statsPeriod.name)
                     .put("fixationPreset", settings.fixationPreset.name)
+                    .put("quickValues", JSONObject().apply {
+                        QUICK_TYPES.forEach { type ->
+                            put(
+                                type.name,
+                                encodeQuickValues(
+                                    settings.quickValues[type] ?: SetQuickValues.forType(type)
+                                )
+                            )
+                        }
+                    })
+                    .put("gppExercises", JSONArray().apply {
+                        settings.gppExercises.forEach { put(it) }
+                    })
             )
             .apply {
                 profile?.let { put("profile", encodeProfile(it)) }
@@ -382,8 +400,51 @@ object DiaryBackupJson {
         weeklyGoal = obj.optInt("weeklyGoal", 3).coerceIn(1, 14),
         defaultWeight = obj.optInt("defaultWeight", 24).coerceIn(4, 48),
         statsPeriod = enumOrDefault(obj.optString("statsPeriod"), StatsPeriod.MONTH),
-        fixationPreset = FixationPreset.fromName(obj.optString("fixationPreset"))
+        fixationPreset = FixationPreset.fromName(obj.optString("fixationPreset")),
+        quickValues = decodeQuickValues(obj.optJSONObject("quickValues")),
+        gppExercises = SetQuickValues.sanitizeNames(
+            decodeStringArray(obj.optJSONArray("gppExercises"))
+        )
     )
+
+    private fun encodeQuickValues(values: SetQuickValues): JSONObject = JSONObject()
+        .put("weights", JSONArray().apply { values.weights.forEach { put(it) } })
+        .put("reps", JSONArray().apply { values.reps.forEach { put(it) } })
+        .put("durationsSec", JSONArray().apply { values.durationsSec.forEach { put(it) } })
+
+    private fun decodeQuickValues(obj: JSONObject?): Map<SectionType, SetQuickValues> =
+        QUICK_TYPES.associateWith { type ->
+            val raw = obj?.optJSONObject(type.name)
+            if (raw == null) {
+                SetQuickValues.forType(type)
+            } else {
+                SetQuickValues.sanitize(
+                    SetQuickValues(
+                        weights = decodeIntArray(raw.optJSONArray("weights")),
+                        reps = decodeIntArray(raw.optJSONArray("reps")),
+                        durationsSec = decodeIntArray(raw.optJSONArray("durationsSec"))
+                    )
+                )
+            }
+        }
+
+    private fun decodeIntArray(array: JSONArray?): List<Int> = buildList {
+        if (array != null) {
+            for (i in 0 until array.length()) {
+                val value = array.optInt(i, -1)
+                if (value > 0) add(value)
+            }
+        }
+    }
+
+    private fun decodeStringArray(array: JSONArray?): List<String> = buildList {
+        if (array != null) {
+            for (i in 0 until array.length()) {
+                val value = array.optString(i, "")
+                if (value.isNotBlank()) add(value)
+            }
+        }
+    }
 
     private inline fun <reified T : Enum<T>> enumOrDefault(raw: String, default: T): T =
         runCatching { enumValueOf<T>(raw) }.getOrDefault(default)

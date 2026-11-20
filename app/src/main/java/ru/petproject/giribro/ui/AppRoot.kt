@@ -323,6 +323,9 @@ fun AppRoot(
                     val source = workouts.firstOrNull { it.id == workoutId }
                     NewWorkoutScreen(
                         defaultWeight = settings.defaultWeight,
+                        quickValues = settings.quickValues,
+                        gppExercises = settings.gppExercises,
+                        onRememberGppExercise = vm::addGppExercise,
                         initialWorkout = source,
                         repeat = isRepeat,
                         restoreDraft = workoutId < 0L,

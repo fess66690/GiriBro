@@ -18,7 +18,7 @@ enum class SectionType(
     WARMUP("Разминка", "Разминка", false, 1, 1.0),
     JERK("Толчок", "Толчок", true, 2, 1.0),
     SNATCH("Рывок", "Рывок", true, 1, 1.0),
-    LONG_CYCLE("Длинный цикл", "ДЦ", true, 2, 1.6),
+    LONG_CYCLE("Длинный цикл", "ДЦ", true, 2, 1.3),
     SWINGS("Махи и прочее", "Махи", false, 1, 1.0),
     GPP("ОФП", "ОФП", false, 1, 1.0),
     COOLDOWN("Заминка", "Заминка", false, 1, 1.0);
@@ -90,6 +90,57 @@ enum class SetCaptureMode {
     }
 }
 
+/** Быстрые значения для одного гиревого упражнения. Задаются в настройках. */
+data class SetQuickValues(
+    val weights: List<Int>,
+    val reps: List<Int>,
+    val durationsSec: List<Int>
+) {
+    companion object {
+        const val MAX_VALUES = 12
+        const val MAX_NAME_LENGTH = 64
+        const val MAX_GPP_EXERCISES = 40
+
+        /** Значения по умолчанию для толчка, ДЦ и рывка. */
+        val defaults: Map<SectionType, SetQuickValues> = mapOf(
+            SectionType.JERK to SetQuickValues(
+                weights = listOf(16, 20, 24, 28, 32),
+                reps = listOf(10, 20, 30, 40, 50),
+                durationsSec = listOf(30, 60, 120, 180, 300, 600)
+            ),
+            SectionType.LONG_CYCLE to SetQuickValues(
+                weights = listOf(16, 20, 24, 28, 32),
+                reps = listOf(10, 20, 30, 40, 50),
+                durationsSec = listOf(30, 60, 120, 180, 300, 600)
+            ),
+            SectionType.SNATCH to SetQuickValues(
+                weights = listOf(16, 20, 24, 28, 32),
+                reps = listOf(20, 40, 80, 100, 200),
+                durationsSec = listOf(60, 120, 240, 360, 600)
+            )
+        )
+
+        fun forType(type: SectionType): SetQuickValues =
+            defaults[type] ?: defaults.getValue(SectionType.JERK)
+
+        /** Оставляет только корректные значения и ограничивает длину списков. */
+        fun sanitize(values: SetQuickValues): SetQuickValues = SetQuickValues(
+            weights = values.weights.filter { it in 1..200 }.distinct().take(MAX_VALUES),
+            reps = values.reps.filter { it in 1..999 }.distinct().take(MAX_VALUES),
+            durationsSec = values.durationsSec
+                .filter { it in 1..86_400 }
+                .distinct()
+                .take(MAX_VALUES)
+        )
+
+        fun sanitizeNames(names: List<String>): List<String> = names
+            .map { it.trim().take(MAX_NAME_LENGTH) }
+            .filter { it.isNotEmpty() }
+            .distinctBy { it.lowercase() }
+            .take(MAX_GPP_EXERCISES)
+    }
+}
+
 data class SetEntry(
     val weightKg: Int,
     val reps: Int,
@@ -98,7 +149,9 @@ data class SetEntry(
     /** Отдых после этого подхода, секунды. У последнего подхода не используется. */
     val restSec: Int = DEFAULT_REST_SEC,
     /** Режим съёмки подхода; по умолчанию камера не используется. */
-    val captureMode: SetCaptureMode = SetCaptureMode.NONE
+    val captureMode: SetCaptureMode = SetCaptureMode.NONE,
+    /** Произвольное название упражнения в разделах без гирь (ОФП и т.п.). */
+    val exerciseName: String = ""
 ) {
     val volumeKg: Double get() = weightKg.toDouble() * reps
 

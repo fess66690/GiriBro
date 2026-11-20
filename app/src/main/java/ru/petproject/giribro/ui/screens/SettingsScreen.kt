@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -59,6 +60,8 @@ import ru.petproject.giribro.data.DiaryBackupJson
 import ru.petproject.giribro.data.NormAgeGroup
 import ru.petproject.giribro.data.NormBook
 import ru.petproject.giribro.data.NormGender
+import ru.petproject.giribro.data.SectionType
+import ru.petproject.giribro.data.SetQuickValues
 import ru.petproject.giribro.data.ThemeMode
 import ru.petproject.giribro.data.asBodyNumber
 import ru.petproject.giribro.ui.components.SectionTitle
@@ -87,6 +90,18 @@ fun SettingsScreen(
     var showPrivacyPolicy by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
     var importPassword by remember { mutableStateOf("") }
+
+    var quickExercise by remember { mutableStateOf(SectionType.JERK) }
+    var quickWeights by remember { mutableStateOf("") }
+    var quickReps by remember { mutableStateOf("") }
+    var quickDurations by remember { mutableStateOf("") }
+    LaunchedEffect(quickExercise, settings.quickValues[quickExercise]) {
+        val values = settings.quickValues[quickExercise]
+            ?: SetQuickValues.forType(quickExercise)
+        quickWeights = values.weights.joinToString(", ")
+        quickReps = values.reps.joinToString(", ")
+        quickDurations = values.durationsSec.joinToString(", ")
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(DiaryBackupJson.MIME_TYPE)
@@ -221,6 +236,76 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        item {
+            SettingsCard("Быстрые значения подходов") {
+                Text(
+                    "Списки для толчка, ДЦ и рывка. Значения вводятся через запятую.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    listOf(
+                        SectionType.JERK,
+                        SectionType.LONG_CYCLE,
+                        SectionType.SNATCH
+                    ).forEach { type ->
+                        FilterChip(
+                            selected = quickExercise == type,
+                            onClick = { quickExercise = type },
+                            label = { Text(type.short) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = quickWeights,
+                    onValueChange = { quickWeights = it },
+                    label = { Text("Вес, кг") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = quickReps,
+                    onValueChange = { quickReps = it },
+                    label = { Text("Повторы") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = quickDurations,
+                    onValueChange = { quickDurations = it },
+                    label = { Text("Время, секунды") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Например, время: 30, 60, 120, 180, 300, 600 (секунды).",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        vm.setQuickValues(
+                            quickExercise,
+                            SetQuickValues(
+                                weights = parseQuickValues(quickWeights),
+                                reps = parseQuickValues(quickReps),
+                                durationsSec = parseQuickValues(quickDurations)
+                            )
+                        )
+                    }
+                ) { Text("Сохранить") }
             }
         }
 
@@ -650,6 +735,10 @@ fun SettingsScreen(
         PrivacyPolicyDialog(onDismiss = { showPrivacyPolicy = false })
     }
 }
+
+private fun parseQuickValues(raw: String): List<Int> = raw
+    .split(',', ';', '\n', ' ')
+    .mapNotNull { it.trim().toIntOrNull() }
 
 @Composable
 private fun SettingsCard(title: String, content: @Composable () -> Unit) {

@@ -31,6 +31,12 @@ object WorkoutJson {
                 if (entry.captureMode != SetCaptureMode.NONE) {
                     setJson.put("cm", entry.captureMode.name)
                 }
+                if (entry.exerciseName.isNotBlank()) {
+                    setJson.put(
+                        "n",
+                        entry.exerciseName.take(SetQuickValues.MAX_NAME_LENGTH)
+                    )
+                }
                 sets.put(setJson)
             }
             root.put(
@@ -86,7 +92,9 @@ object WorkoutJson {
                                 durationSec = set.optInt("d", 0),
                                 restSec = set.optInt("rest", legacyRest)
                                     .coerceIn(0, SetEntry.MAX_REST_SEC),
-                                captureMode = SetCaptureMode.fromName(set.optString("cm"))
+                                captureMode = SetCaptureMode.fromName(set.optString("cm")),
+                                exerciseName = set.optString("n")
+                                    .take(SetQuickValues.MAX_NAME_LENGTH)
                             )
                         )
                     }

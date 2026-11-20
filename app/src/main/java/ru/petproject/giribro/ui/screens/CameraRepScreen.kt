@@ -554,7 +554,7 @@ private fun CounterSetupCard(
                     }
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(30, 60, 180, 300).forEach { seconds ->
+                        listOf(60, 120, 240).forEach { seconds ->
                             FilterChip(
                                 selected = state.goalTimeSec == seconds,
                                 onClick = { vm.setGoalTimeSec(seconds) },
@@ -581,7 +581,7 @@ private fun CounterSetupCard(
                     }
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(10, 20, 30, 50, 100).forEach { reps ->
+                        listOf(10, 20, 30, 50).forEach { reps ->
                             FilterChip(
                                 selected = state.goalReps == reps,
                                 onClick = { vm.setGoalReps(reps) },

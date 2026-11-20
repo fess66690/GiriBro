@@ -71,6 +71,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.petproject.giribro.data.SectionType
 import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.data.SetEntry
+import ru.petproject.giribro.data.SetQuickValues
 import ru.petproject.giribro.data.Workout
 import ru.petproject.giribro.data.WorkoutDraft
 import ru.petproject.giribro.data.WorkoutDraftJson
@@ -99,6 +100,9 @@ import java.time.ZoneOffset
 @Composable
 fun NewWorkoutScreen(
     defaultWeight: Int,
+    quickValues: Map<SectionType, SetQuickValues> = SetQuickValues.defaults,
+    gppExercises: List<String> = emptyList(),
+    onRememberGppExercise: (String) -> Unit = {},
     initialWorkout: Workout? = null,
     repeat: Boolean = false,
     restoreDraft: Boolean = true,
@@ -485,6 +489,10 @@ fun NewWorkoutScreen(
             AddSetDialog(
                 type = section.type,
                 defaultWeight = defaultWeight,
+                previousSet = section.sets.lastOrNull(),
+                quickValues = quickValues,
+                gppExercises = gppExercises,
+                onRememberGppExercise = onRememberGppExercise,
                 onDismiss = { addSetFor = null },
                 onConfirm = { entry ->
                     vm.addSet(key, entry)
@@ -570,10 +578,24 @@ private fun SectionEditor(
                             .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            "${set.weightKg} кг × ${set.reps}",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+                        if (set.exerciseName.isBlank()) {
+                            Text(
+                                "${set.weightKg} кг × ${set.reps}",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        } else {
+                            Column {
+                                Text(
+                                    set.exerciseName,
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                Text(
+                                    "${set.weightKg} кг × ${set.reps}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                         Spacer(Modifier.width(8.dp))
                         Text(
                             if (set.durationSec > 0) set.durationSec.asDuration() else "без времени",
@@ -886,13 +908,27 @@ private fun AddSectionCard(onAdd: (SectionType) -> Unit) {
 private fun AddSetDialog(
     type: SectionType,
     defaultWeight: Int,
+    previousSet: SetEntry?,
+    quickValues: Map<SectionType, SetQuickValues>,
+    gppExercises: List<String>,
+    onRememberGppExercise: (String) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: (SetEntry) -> Unit
 ) {
-    var weightText by remember { mutableStateOf(defaultWeight.toString()) }
-    var repsText by remember { mutableStateOf("20") }
-    var minutesText by remember { mutableStateOf("") }
-    var secondsText by remember { mutableStateOf("") }
+    val isGpp = type == SectionType.GPP
+    val previousDuration = previousSet?.durationSec ?: 0
+    var exerciseName by remember { mutableStateOf("") }
+    // Новый подход начинается со значений предыдущего, если он есть.
+    var weightText by remember {
+        mutableStateOf((previousSet?.weightKg ?: defaultWeight).toString())
+    }
+    var repsText by remember { mutableStateOf((previousSet?.reps ?: 20).toString()) }
+    var minutesText by remember {
+        mutableStateOf(if (previousDuration > 0) (previousDuration / 60).toString() else "")
+    }
+    var secondsText by remember {
+        mutableStateOf(if (previousDuration > 0) (previousDuration % 60).toString() else "")
+    }
     var captureMode by remember { mutableStateOf(SetCaptureMode.NONE) }
 
     val weight = weightText.toIntOrNull()
@@ -900,18 +936,12 @@ private fun AddSetDialog(
     val minutes = minutesText.toIntOrNull() ?: 0
     val seconds = secondsText.toIntOrNull() ?: 0
     val durationSec = minutes * 60 + seconds
+    val name = exerciseName.trim()
     val valid = weight != null && weight in 0..200 && reps != null && reps in 1..999 &&
-        minutes in 0..999 && seconds in 0..599
+        minutes in 0..999 && seconds in 0..599 && durationSec <= 86_400 &&
+        (!isGpp || name.isNotEmpty())
 
-    val timePresets = listOf(
-        30 to "30 с",
-        60 to "1 мин",
-        90 to "1:30",
-        120 to "2 мин",
-        180 to "3 мин",
-        300 to "5 мин",
-        600 to "10 мин"
-    )
+    val quick = quickValues[type] ?: SetQuickValues.forType(type)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -921,6 +951,37 @@ private fun AddSetDialog(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                if (isGpp) {
+                    OutlinedTextField(
+                        value = exerciseName,
+                        onValueChange = {
+                            exerciseName = it.take(SetQuickValues.MAX_NAME_LENGTH)
+                        },
+                        label = { Text("Упражнение") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (gppExercises.isNotEmpty()) {
+                        Text(
+                            "Сохранённые упражнения",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            gppExercises.forEach { suggestion ->
+                                FilterChip(
+                                    selected = name.equals(suggestion, ignoreCase = true),
+                                    onClick = { exerciseName = suggestion },
+                                    label = { Text(suggestion) }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
                         value = weightText,
@@ -959,68 +1020,9 @@ private fun AddSetDialog(
                     )
                 }
 
-                Text(
-                    "Быстрый вес",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    listOf(8, 12, 16, 20, 24, 28, 32, 36, 40).forEach { value ->
-                        FilterChip(
-                            selected = weightText == value.toString(),
-                            onClick = { weightText = value.toString() },
-                            label = { Text("$value") }
-                        )
-                    }
-                }
-
-                Text(
-                    "Быстрые повторы",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    listOf(10, 15, 20, 25, 30).forEach { value ->
-                        FilterChip(
-                            selected = repsText == value.toString(),
-                            onClick = { repsText = value.toString() },
-                            label = { Text("$value") }
-                        )
-                    }
-                }
-
-                Text(
-                    "Быстрое время",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    timePresets.forEach { (presetSec, label) ->
-                        FilterChip(
-                            selected = durationSec == presetSec &&
-                                (minutesText.isNotEmpty() || secondsText.isNotEmpty()),
-                            onClick = {
-                                minutesText = (presetSec / 60).toString()
-                                secondsText = (presetSec % 60).toString()
-                            },
-                            label = { Text(label) }
-                        )
-                    }
-                }
-
-                // Камера имеет смысл только для трёх упражнений со счётом повторов.
-                if (RepExercise.fromSection(type) != null) {
+                if (!isGpp) {
                     Text(
-                        "Съёмка подхода",
+                        "Быстрый вес",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1028,41 +1030,102 @@ private fun AddSetDialog(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        FilterChip(
-                            selected = captureMode == SetCaptureMode.RECORD,
-                            onClick = {
-                                captureMode = if (captureMode == SetCaptureMode.RECORD) {
-                                    SetCaptureMode.NONE
-                                } else {
-                                    SetCaptureMode.RECORD
-                                }
-                            },
-                            label = { Text("Запись") }
-                        )
-                        FilterChip(
-                            selected = captureMode == SetCaptureMode.COUNT,
-                            onClick = {
-                                captureMode = if (captureMode == SetCaptureMode.COUNT) {
-                                    SetCaptureMode.NONE
-                                } else {
-                                    SetCaptureMode.COUNT
-                                }
-                            },
-                            label = { Text("Счёт") }
-                        )
+                        quick.weights.forEach { value ->
+                            FilterChip(
+                                selected = weightText == value.toString(),
+                                onClick = { weightText = value.toString() },
+                                label = { Text("$value") }
+                            )
+                        }
                     }
+
                     Text(
-                        when (captureMode) {
-                            SetCaptureMode.RECORD ->
-                                "Камера, счёт и видео в выбранную папку."
-                            SetCaptureMode.COUNT ->
-                                "Камера и счёт без записи видео."
-                            SetCaptureMode.NONE ->
-                                "Камера не используется."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
+                        "Быстрые повторы",
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        quick.reps.forEach { value ->
+                            FilterChip(
+                                selected = repsText == value.toString(),
+                                onClick = { repsText = value.toString() },
+                                label = { Text("$value") }
+                            )
+                        }
+                    }
+
+                    Text(
+                        "Быстрое время",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        quick.durationsSec.forEach { presetSec ->
+                            FilterChip(
+                                selected = durationSec == presetSec &&
+                                    (minutesText.isNotEmpty() || secondsText.isNotEmpty()),
+                                onClick = {
+                                    minutesText = (presetSec / 60).toString()
+                                    secondsText = (presetSec % 60).toString()
+                                },
+                                label = { Text(quickDurationLabel(presetSec)) }
+                            )
+                        }
+                    }
+
+                    // Камера имеет смысл только для трёх упражнений со счётом повторов.
+                    if (RepExercise.fromSection(type) != null) {
+                        Text(
+                            "Съёмка подхода",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            FilterChip(
+                                selected = captureMode == SetCaptureMode.RECORD,
+                                onClick = {
+                                    captureMode = if (captureMode == SetCaptureMode.RECORD) {
+                                        SetCaptureMode.NONE
+                                    } else {
+                                        SetCaptureMode.RECORD
+                                    }
+                                },
+                                label = { Text("Запись") }
+                            )
+                            FilterChip(
+                                selected = captureMode == SetCaptureMode.COUNT,
+                                onClick = {
+                                    captureMode = if (captureMode == SetCaptureMode.COUNT) {
+                                        SetCaptureMode.NONE
+                                    } else {
+                                        SetCaptureMode.COUNT
+                                    }
+                                },
+                                label = { Text("Счёт") }
+                            )
+                        }
+                        Text(
+                            when (captureMode) {
+                                SetCaptureMode.RECORD ->
+                                    "Камера, счёт и видео в выбранную папку."
+                                SetCaptureMode.COUNT ->
+                                    "Камера и счёт без записи видео."
+                                SetCaptureMode.NONE ->
+                                    "Камера не используется."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 if (weight != null && reps != null) {
@@ -1092,12 +1155,14 @@ private fun AddSetDialog(
         confirmButton = {
             TextButton(
                 onClick = {
+                    if (isGpp) onRememberGppExercise(name)
                     onConfirm(
                         SetEntry(
                             weight ?: 0,
                             reps ?: 0,
                             durationSec,
-                            captureMode = captureMode
+                            captureMode = if (isGpp) SetCaptureMode.NONE else captureMode,
+                            exerciseName = if (isGpp) name else ""
                         )
                     )
                 },
@@ -1108,4 +1173,10 @@ private fun AddSetDialog(
             TextButton(onClick = onDismiss) { Text("Отмена") }
         }
     )
+}
+
+private fun quickDurationLabel(seconds: Int): String = when {
+    seconds < 60 -> "$seconds с"
+    seconds % 60 == 0 -> "${seconds / 60} мин"
+    else -> "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
 }

@@ -26,7 +26,7 @@ class VolumeTest {
     @Test
     fun `double kettlebell exercises use two bells`() {
         assertEquals(2.0, SectionType.JERK.coefficient, 0.001)
-        assertEquals(3.2, SectionType.LONG_CYCLE.coefficient, 0.001)
+        assertEquals(2.6, SectionType.LONG_CYCLE.coefficient, 0.001)
         assertEquals(1.0, SectionType.SNATCH.coefficient, 0.001)
     }
 
@@ -43,7 +43,7 @@ class VolumeTest {
     @Test
     fun `long cycle uses two bells and coefficient`() {
         val w = workout(Section(SectionType.LONG_CYCLE, listOf(SetEntry(24, 10))))
-        assertEquals(768.0, w.tonnageKg, 0.001)
+        assertEquals(624.0, w.tonnageKg, 0.001)
     }
 
     @Test

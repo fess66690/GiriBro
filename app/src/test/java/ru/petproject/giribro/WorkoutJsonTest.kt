@@ -37,6 +37,20 @@ class WorkoutJsonTest {
     }
 
     @Test
+    fun `gpp exercise name survives encode and decode`() {
+        val sections = listOf(
+            Section(
+                SectionType.GPP,
+                listOf(SetEntry(0, 15, 0, exerciseName = "Планка"))
+            )
+        )
+
+        assertEquals(sections, WorkoutJson.decode(WorkoutJson.encode(sections)))
+        val restored = WorkoutJson.decode(WorkoutJson.encode(sections))
+        assertEquals("Планка", restored.first().sets.first().exerciseName)
+    }
+
+    @Test
     fun `empty workout encodes to empty array`() {
         assertEquals("[]", WorkoutJson.encode(emptyList()))
         assertTrue(WorkoutJson.decode("[]").isEmpty())
