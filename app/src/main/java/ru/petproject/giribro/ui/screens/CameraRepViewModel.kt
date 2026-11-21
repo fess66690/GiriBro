@@ -4,7 +4,6 @@ import android.app.Application
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.SystemClock
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -18,6 +17,7 @@ import ru.petproject.giribro.GiriBroApp
 import ru.petproject.giribro.data.CounterGoal
 import ru.petproject.giribro.data.CounterTimerFormat
 import ru.petproject.giribro.data.SetCaptureMode
+import ru.petproject.giribro.logging.AppLog
 import ru.petproject.giribro.vision.ExerciseProfile
 import ru.petproject.giribro.vision.FixationPreset
 import ru.petproject.giribro.vision.MediaPipePoseSource
@@ -357,7 +357,7 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
 
     /** Пишет полный стек в Logcat и оставляет читаемые детали в карточке ошибки. */
     private fun reportError(context: String, error: Throwable) {
-        Log.e(TAG, context, error)
+        AppLog.e(TAG, context, error)
         val details = buildString {
             append(error.javaClass.name)
             error.message?.let { append(": ").append(it) }

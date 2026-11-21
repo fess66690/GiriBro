@@ -2,7 +2,6 @@ package ru.petproject.giribro
 
 import android.app.Application
 import android.net.Uri
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
@@ -35,6 +34,7 @@ import ru.petproject.giribro.data.StatsPeriod
 import ru.petproject.giribro.data.ThemeMode
 import ru.petproject.giribro.data.Workout
 import ru.petproject.giribro.data.WorkoutValidator
+import ru.petproject.giribro.logging.AppLog
 import ru.petproject.giribro.util.pluralRu
 import ru.petproject.giribro.vision.FixationPreset
 import java.io.ByteArrayOutputStream
@@ -103,7 +103,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось сохранить тренировку", e)
+                AppLog.e(TAG, "Не удалось сохранить тренировку", e)
                 showMessage("Не удалось сохранить тренировку. Попробуйте ещё раз.", isError = true)
                 return@launch
             } finally {
@@ -121,7 +121,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось удалить тренировку", e)
+                AppLog.e(TAG, "Не удалось удалить тренировку", e)
                 showMessage("Не удалось удалить тренировку. Попробуйте ещё раз.", isError = true)
                 return@launch
             }
@@ -144,7 +144,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось сохранить замер", e)
+                AppLog.e(TAG, "Не удалось сохранить замер", e)
                 showMessage("Не удалось сохранить замер. Попробуйте ещё раз.", isError = true)
                 return@launch
             } finally {
@@ -162,7 +162,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось удалить замер", e)
+                AppLog.e(TAG, "Не удалось удалить замер", e)
                 showMessage("Не удалось удалить замер. Попробуйте ещё раз.", isError = true)
                 return@launch
             }
@@ -182,14 +182,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось очистить дневник", e)
+                AppLog.e(TAG, "Не удалось очистить дневник", e)
                 showMessage("Не удалось очистить дневник. Попробуйте ещё раз.", isError = true)
                 return@launch
             }
 
             app.drafts.clear()
             runCatching { app.settings.demoSeeded = true }
-                .onFailure { Log.e(TAG, "Не удалось сохранить флаг демо-данных", it) }
+                .onFailure { AppLog.e(TAG, "Не удалось сохранить флаг демо-данных", it) }
             showMessage("Дневник и замеры очищены")
         }
     }
@@ -225,7 +225,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось сохранить резервную копию", e)
+                AppLog.e(TAG, "Не удалось сохранить резервную копию", e)
                 showMessage("Не удалось сохранить резервную копию. Попробуйте ещё раз.", isError = true)
             } finally {
                 _backupBusy.value = false
@@ -252,10 +252,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: BackupFormatException) {
-                Log.w(TAG, "Некорректная резервная копия", e)
+                AppLog.w(TAG, "Некорректная резервная копия", e)
                 showMessage(e.message ?: "Не удалось прочитать резервную копию.", isError = true)
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось прочитать резервную копию", e)
+                AppLog.e(TAG, "Не удалось прочитать резервную копию", e)
                 showMessage("Не удалось прочитать файл резервной копии.", isError = true)
             } finally {
                 _backupBusy.value = false
@@ -285,12 +285,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: BackupPasswordException) {
                 _backupPasswordError.value = e.message ?: "Неверный пароль."
             } catch (e: BackupFormatException) {
-                Log.w(TAG, "Некорректная защищённая копия", e)
+                AppLog.w(TAG, "Некорректная защищённая копия", e)
                 pendingEncryptedBackup = null
                 _backupPasswordRequired.value = false
                 showMessage(e.message ?: "Не удалось прочитать копию.", isError = true)
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось расшифровать копию", e)
+                AppLog.e(TAG, "Не удалось расшифровать копию", e)
                 _backupPasswordError.value = "Не удалось расшифровать копию."
             } finally {
                 _backupBusy.value = false
@@ -325,7 +325,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось восстановить резервную копию", e)
+                AppLog.e(TAG, "Не удалось восстановить резервную копию", e)
                 _backupBusy.value = false
                 showMessage("Не удалось восстановить дневник. Текущие данные не изменены.", isError = true)
                 return@launch
@@ -342,12 +342,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             app.drafts.clear()
             runCatching { app.settings.demoSeeded = true }
-                .onFailure { Log.e(TAG, "Не удалось сохранить флаг демо-данных", it) }
+                .onFailure { AppLog.e(TAG, "Не удалось сохранить флаг демо-данных", it) }
 
             _pendingImport.value = null
             _backupBusy.value = false
             if (settingsError != null) {
-                Log.e(TAG, "Дневник восстановлен, но настройки не применились", settingsError)
+                AppLog.e(TAG, "Дневник восстановлен, но настройки не применились", settingsError)
                 showMessage("Дневник восстановлен, но настройки применить не удалось.", isError = true)
             } else {
                 val count = backup.workouts.size
@@ -380,7 +380,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось включить автокопию", e)
+                AppLog.e(TAG, "Не удалось включить автокопию", e)
                 showMessage("Не удалось получить доступ к папке. Выберите её заново.", isError = true)
             } finally {
                 _backupBusy.value = false
@@ -408,7 +408,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось создать автокопию", e)
+                AppLog.e(TAG, "Не удалось создать автокопию", e)
                 showMessage("Не удалось создать автокопию. Попробуйте ещё раз.", isError = true)
             } finally {
                 _backupBusy.value = false
@@ -434,7 +434,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Не удалось сохранить пароль копий", e)
+                AppLog.e(TAG, "Не удалось сохранить пароль копий", e)
                 showMessage(
                     "Не удалось сохранить пароль на устройстве. Попробуйте ещё раз.",
                     isError = true
@@ -521,9 +521,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private inline fun updateSetting(errorText: String, block: () -> Unit) {
         runCatching(block).onFailure { error ->
-            Log.e(TAG, errorText, error)
+            AppLog.e(TAG, errorText, error)
             showMessage("$errorText. Попробуйте ещё раз.", isError = true)
         }
+    }
+
+    /** Показывает ошибку, возникшую прямо в UI (например, нет почтового клиента). */
+    fun showError(text: String) {
+        showMessage(text, isError = true)
     }
 
     private fun showMessage(text: String, isError: Boolean = false) {

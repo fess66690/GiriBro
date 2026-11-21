@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import android.util.Log
 import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -95,6 +94,7 @@ import ru.petproject.giribro.data.CounterGoal
 import ru.petproject.giribro.data.CounterTimerFormat
 import ru.petproject.giribro.data.SetCaptureMode
 import ru.petproject.giribro.data.asTonnage
+import ru.petproject.giribro.logging.AppLog
 import ru.petproject.giribro.util.formatClockPadded
 import ru.petproject.giribro.vision.FixationPreset
 import ru.petproject.giribro.vision.PoseFrame
@@ -153,7 +153,7 @@ fun CameraRepScreen(
             videoFolderUri = uri
             videoStatus = "Папка для видео выбрана"
         }.onFailure { error ->
-            Log.e(TAG, "Не удалось сохранить доступ к папке видео", error)
+            AppLog.e(TAG, "Не удалось сохранить доступ к папке видео", error)
             videoStatus = "Не удалось выбрать папку: ${error.message.orEmpty()}"
         }
     }
@@ -170,7 +170,7 @@ fun CameraRepScreen(
         val document = runCatching {
             DocumentFile.fromTreeUri(context, folder)?.createFile("video/mp4", fileName)
         }.onFailure { error ->
-            Log.e(TAG, "Не удалось создать файл видео", error)
+            AppLog.e(TAG, "Не удалось создать файл видео", error)
         }.getOrNull()
         if (document == null) {
             videoStatus = "Не удалось создать файл в выбранной папке"
@@ -196,7 +196,7 @@ fun CameraRepScreen(
                             activeRecording = null
                             runCatching { descriptor.close() }
                             videoStatus = if (event.hasError()) {
-                                Log.e(
+                                AppLog.e(
                                     TAG,
                                     "Ошибка записи видео, код ${event.error}",
                                     event.cause
@@ -210,7 +210,7 @@ fun CameraRepScreen(
                 }
         } catch (error: Throwable) {
             runCatching { descriptor.close() }
-            Log.e(TAG, "Не удалось начать запись видео", error)
+            AppLog.e(TAG, "Не удалось начать запись видео", error)
             videoStatus = "Не удалось начать запись: ${error.message.orEmpty()}"
         }
     }
@@ -938,7 +938,7 @@ private fun CameraCard(
                 onCameraReady(true)
             } catch (error: Throwable) {
                 onCameraReady(false)
-                Log.e(TAG, "Не удалось открыть камеру", error)
+                AppLog.e(TAG, "Не удалось открыть камеру", error)
                 cameraError = buildString {
                     append("Не удалось открыть камеру: ").append(error.javaClass.name)
                     error.message?.let { append(": ").append(it) }

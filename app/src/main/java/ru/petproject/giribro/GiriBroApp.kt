@@ -1,7 +1,6 @@
 package ru.petproject.giribro
 
 import android.app.Application
-import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,6 +15,7 @@ import ru.petproject.giribro.data.DemoData
 import ru.petproject.giribro.data.SettingsRepository
 import ru.petproject.giribro.data.WorkoutDraftStore
 import ru.petproject.giribro.data.WorkoutRepository
+import ru.petproject.giribro.logging.AppLog
 import ru.petproject.giribro.timer.TimerNotifications
 
 class GiriBroApp : Application() {
@@ -36,12 +36,13 @@ class GiriBroApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLog.init(this)
         runCatching { TimerNotifications.ensureChannel(this) }
-            .onFailure { Log.e(TAG, "Не удалось создать канал уведомлений", it) }
+            .onFailure { AppLog.e(TAG, "Не удалось создать канал уведомлений", it) }
         runCatching { BackupNotifications.ensureChannel(this) }
-            .onFailure { Log.e(TAG, "Не удалось создать канал резервных копий", it) }
+            .onFailure { AppLog.e(TAG, "Не удалось создать канал резервных копий", it) }
         runCatching { BackupScheduler.schedule(this) }
-            .onFailure { Log.e(TAG, "Не удалось запланировать автокопию", it) }
+            .onFailure { AppLog.e(TAG, "Не удалось запланировать автокопию", it) }
         // Демо-данные нужны только для разработки и скриншотов.
         // В release пользователь начинает с пустого дневника.
         if (BuildConfig.DEBUG) {
@@ -49,7 +50,7 @@ class GiriBroApp : Application() {
         }
         appScope.launch {
             runCatching { backupService.autoBackup(force = false) }
-                .onFailure { Log.e(TAG, "Не удалось проверить автокопию", it) }
+                .onFailure { AppLog.e(TAG, "Не удалось проверить автокопию", it) }
         }
     }
 
@@ -59,18 +60,18 @@ class GiriBroApp : Application() {
 
         runCatching { settings.demoSeeded = true }
             .onFailure {
-                Log.e(TAG, "Не удалось сохранить флаг демо-данных", it)
+                AppLog.e(TAG, "Не удалось сохранить флаг демо-данных", it)
                 return
             }
 
         appScope.launch {
             DemoData.workouts().forEach { workout ->
                 runCatching { workouts.save(workout) }
-                    .onFailure { Log.e(TAG, "Не удалось сохранить демо-тренировку", it) }
+                    .onFailure { AppLog.e(TAG, "Не удалось сохранить демо-тренировку", it) }
             }
             DemoData.measurements().forEach { measurement ->
                 runCatching { bodyMeasurements.save(measurement) }
-                    .onFailure { Log.e(TAG, "Не удалось сохранить демо-замер", it) }
+                    .onFailure { AppLog.e(TAG, "Не удалось сохранить демо-замер", it) }
             }
         }
     }

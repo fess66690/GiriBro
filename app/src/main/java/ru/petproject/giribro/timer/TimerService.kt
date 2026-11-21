@@ -14,7 +14,6 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -32,6 +31,7 @@ import kotlinx.coroutines.launch
 import ru.petproject.giribro.MainActivity
 import ru.petproject.giribro.R
 import ru.petproject.giribro.data.SetCaptureMode
+import ru.petproject.giribro.logging.AppLog
 import ru.petproject.giribro.vision.RepExercise
 import java.util.Locale
 import kotlin.math.ceil
@@ -95,7 +95,7 @@ class TimerService : Service() {
                     )
                     begin(plan)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Не удалось запустить таймер", e)
+                    AppLog.e(TAG, "Не удалось запустить таймер", e)
                     stopTimer()
                 }
             }
@@ -275,7 +275,7 @@ class TimerService : Service() {
         runCatching {
             manager.notify(TimerNotifications.NOTIFICATION_ID, buildNotification(_state.value))
         }.onFailure {
-            Log.w(TAG, "Не удалось обновить уведомление таймера", it)
+            AppLog.w(TAG, "Не удалось обновить уведомление таймера", it)
         }
     }
 
@@ -386,7 +386,7 @@ class TimerService : Service() {
     private fun releaseWakeLock() {
         runCatching {
             wakeLock?.takeIf { it.isHeld }?.release()
-        }.onFailure { Log.w(TAG, "Не удалось снять блокировку сна", it) }
+        }.onFailure { AppLog.w(TAG, "Не удалось снять блокировку сна", it) }
         wakeLock = null
     }
 
@@ -400,14 +400,14 @@ class TimerService : Service() {
                 }
                 start()
             }
-        }.onFailure { Log.w(TAG, "Не удалось воспроизвести сигнал времени", it) }
+        }.onFailure { AppLog.w(TAG, "Не удалось воспроизвести сигнал времени", it) }
     }
 
     private fun releaseCountdownPlayer() {
         runCatching {
             countdownPlayer?.takeIf { it.isPlaying }?.stop()
             countdownPlayer?.release()
-        }.onFailure { Log.w(TAG, "Не удалось остановить сигнал времени", it) }
+        }.onFailure { AppLog.w(TAG, "Не удалось остановить сигнал времени", it) }
         countdownPlayer = null
     }
 
@@ -499,7 +499,7 @@ class TimerService : Service() {
             return runCatching {
                 ContextCompat.startForegroundService(context, intent)
             }.onFailure {
-                Log.e(TAG, "Не удалось запустить foreground-сервис таймера", it)
+                AppLog.e(TAG, "Не удалось запустить foreground-сервис таймера", it)
             }.isSuccess
         }
 

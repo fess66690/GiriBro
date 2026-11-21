@@ -1,0 +1,85 @@
+package ru.petproject.giribro.logging
+
+import android.content.ClipData
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
+import ru.petproject.giribro.BuildConfig
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+
+/** Контакты автора, показываемые в настройках. */
+object AuthorContacts {
+    const val EMAIL = "fess66690@yandex.ru"
+    const val TELEGRAM_URL = "https://t.me/Vany_Solncev"
+
+    fun emailIntent(): Intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$EMAIL")).apply {
+        putExtra(Intent.EXTRA_SUBJECT, "ГириБро — вопрос разработчику")
+    }
+
+    fun telegramIntent(): Intent = Intent(Intent.ACTION_VIEW, Uri.parse(TELEGRAM_URL))
+}
+
+/** Подготовка письма с техническими логами для системного почтового клиента. */
+object LogSharing {
+
+    private const val LOG_DIR = "logs"
+    private const val MIME_ZIP = "application/zip"
+
+    /**
+     * Возвращает ACTION_SEND с архивом логов. Само письмо приложение не отправляет:
+     * пользователь подтверждает отправку уже в выбранном почтовом клиенте.
+     */
+    fun sendLogsIntent(context: Context): Intent {
+        val archive = createArchive(context)
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            archive
+        )
+        return Intent(Intent.ACTION_SEND).apply {
+            type = MIME_ZIP
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(AuthorContacts.EMAIL))
+            putExtra(
+                Intent.EXTRA_SUBJECT,
+                "ГириБро ${BuildConfig.VERSION_NAME} — логи"
+            )
+            putExtra(
+                Intent.EXTRA_TEXT,
+                "Логи приложения ГириБро ${BuildConfig.VERSION_NAME} " +
+                    "(versionCode ${BuildConfig.VERSION_CODE})."
+            )
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = ClipData.newUri(context.contentResolver, "Логи ГириБро", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    private fun createArchive(context: Context): File {
+        val dir = File(context.cacheDir, LOG_DIR).apply { mkdirs() }
+        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+        val archive = File(dir, "giribro-logs-$stamp.zip")
+        val files = AppLog.logFiles()
+        ZipOutputStream(FileOutputStream(archive)).use { output ->
+            var added = false
+            files.filter { it.exists() }.forEach { file ->
+                output.putNextEntry(ZipEntry(file.name))
+                file.inputStream().use { it.copyTo(output) }
+                output.closeEntry()
+                added = true
+            }
+            if (!added) {
+                output.putNextEntry(ZipEntry("readme.txt"))
+                output.write("Логи пока пусты.".toByteArray(Charsets.UTF_8))
+                output.closeEntry()
+            }
+        }
+        return archive
+    }
+}

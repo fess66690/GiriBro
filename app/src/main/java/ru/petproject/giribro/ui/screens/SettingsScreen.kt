@@ -1,6 +1,7 @@
 package ru.petproject.giribro.ui.screens
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -64,6 +65,9 @@ import ru.petproject.giribro.data.SectionType
 import ru.petproject.giribro.data.SetQuickValues
 import ru.petproject.giribro.data.ThemeMode
 import ru.petproject.giribro.data.asBodyNumber
+import ru.petproject.giribro.logging.AppLog
+import ru.petproject.giribro.logging.AuthorContacts
+import ru.petproject.giribro.logging.LogSharing
 import ru.petproject.giribro.ui.components.SectionTitle
 import ru.petproject.giribro.util.pluralRu
 import ru.petproject.giribro.util.ruDayMonth
@@ -101,6 +105,15 @@ fun SettingsScreen(
         quickWeights = values.weights.joinToString(", ")
         quickReps = values.reps.joinToString(", ")
         quickDurations = values.durationsSec.joinToString(", ")
+    }
+
+    fun openExternal(intent: Intent, errorMessage: String) {
+        runCatching {
+            context.startActivity(Intent.createChooser(intent, "Открыть с помощью"))
+        }.onFailure { error ->
+            AppLog.e("Settings", errorMessage, error)
+            vm.showError(errorMessage)
+        }
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -580,6 +593,69 @@ fun SettingsScreen(
                     "Чего пока нет: облачной синхронизации, ленты товарищей, импорта " +
                         "из Polar/GPX и генератора программ. Это следующий этап.",
                     style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        item {
+            SettingsCard("Связь с автором") {
+                Text(
+                    "E-mail",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    AuthorContacts.EMAIL,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        openExternal(
+                            AuthorContacts.emailIntent(),
+                            "Не удалось открыть почтовый клиент"
+                        )
+                    }
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Telegram",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "@Vany_Solncev",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        openExternal(
+                            AuthorContacts.telegramIntent(),
+                            "Не удалось открыть Telegram"
+                        )
+                    }
+                )
+                HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                OutlinedButton(
+                    onClick = {
+                        runCatching { LogSharing.sendLogsIntent(context) }
+                            .onSuccess { intent ->
+                                openExternal(intent, "Не удалось открыть почтовый клиент")
+                            }
+                            .onFailure { error ->
+                                AppLog.e("Settings", "Не удалось подготовить логи", error)
+                                vm.showError("Не удалось подготовить логи")
+                            }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Отправить логи")
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Логи содержат только технические сведения: версию приложения, " +
+                        "модель устройства и сообщения об ошибках. Данные дневника " +
+                        "и заметки в них не попадают. Письмо открывается в вашем " +
+                        "почтовом клиенте — приложение не отправляет его самостоятельно.",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
