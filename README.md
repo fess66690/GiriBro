@@ -215,6 +215,8 @@ Release-версия при первом запуске показывает п�
 
 Публикация в RuStore: [docs/rustore.md](docs/rustore.md).
 
+План патча `0.3.1`: [docs/version-0.3.1.md](docs/version-0.3.1.md).
+
 Планы развития после `0.2.0`: [docs/platform-design.md](docs/platform-design.md) —
 аккаунты, синхронизация и работа тренера со спортсменами.
 
