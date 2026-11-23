@@ -52,6 +52,7 @@ import ru.petproject.giribro.timer.TimerPhase
 import ru.petproject.giribro.timer.TimerPlanSource
 import ru.petproject.giribro.timer.TimerService
 import ru.petproject.giribro.vision.RepExercise
+import ru.petproject.giribro.ui.components.OnboardingDialog
 import ru.petproject.giribro.ui.screens.BodyScreen
 import ru.petproject.giribro.ui.screens.CameraRepScreen
 import ru.petproject.giribro.ui.screens.DiaryScreen
@@ -103,6 +104,7 @@ fun AppRoot(
     val route = backStackEntry?.destination?.route ?: "diary"
     val baseRoute = route.substringBefore('?')
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val onboardingShown by vm.onboardingShown.collectAsStateWithLifecycle()
     val saving by vm.saving.collectAsStateWithLifecycle()
     val timerState by TimerService.state.collectAsStateWithLifecycle()
     val timerFullScreen = baseRoute == "timer" &&
@@ -400,6 +402,10 @@ fun AppRoot(
                         navController.popBackStack("diary", false)
                     }
                 )
+            }
+
+            if (route == "diary" && !onboardingShown && !showCompletionDialog) {
+                OnboardingDialog(onDismiss = { vm.finishOnboarding() })
             }
         }
     }

@@ -754,6 +754,22 @@ private fun ResultSummary(state: CameraRepUiState) {
                 SummaryValue("Время", formatClockPadded(state.elapsedSec))
                 SummaryValue("Объём", state.volumeKg.asTonnage())
             }
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                SummaryValue("Темп", "${state.rpm} RPM")
+                SummaryValue("Короткие фиксации", state.shortFixations.toString())
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                SummaryValue("Потери позы", state.poseLosses.toString())
+                SummaryValue("Ручные правки", state.manualCorrections.toString())
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Счёт тренировочный: оценки качества помогают понять, где распознавание было неуверенным.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+            )
         }
     }
 }

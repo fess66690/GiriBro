@@ -53,6 +53,9 @@ data class CameraRepUiState(
     val left: Int = 0,
     val right: Int = 0,
     val shortFixations: Int = 0,
+    /** Потери позы и ручные поправки — подсказка о качестве счёта. */
+    val poseLosses: Int = 0,
+    val manualCorrections: Int = 0,
     val fixationProgress: Float = 0f,
     val tracking: Boolean = false,
     val activeSides: Set<Side> = emptySet(),
@@ -117,6 +120,7 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
     private var startedAt = 0L
     private var lastEvent: RepEvent? = null
     private var lastBeatIndex = -1L
+    private var poseWasVisible = true
     private var tone: ToneGenerator? = null
 
     init {
@@ -237,6 +241,7 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         counter.reset()
         startedAt = SystemClock.elapsedRealtime()
         lastBeatIndex = -1L
+        poseWasVisible = true
         if (_state.value.audioMetronome) ensureTone()
         _state.value = freshCounts(_state.value).copy(running = true)
         ticker?.cancel()
@@ -284,16 +289,23 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
     fun reset() {
         stop()
         counter.reset()
+        poseWasVisible = true
         _state.value = freshCounts(_state.value).copy(error = null)
     }
 
     fun addRep() {
         counter.manualAdd()
+        _state.value = _state.value.copy(
+            manualCorrections = _state.value.manualCorrections + 1
+        )
         applySnapshot(counter.currentSnapshot())
     }
 
     fun removeRep() {
         counter.manualRemove()
+        _state.value = _state.value.copy(
+            manualCorrections = _state.value.manualCorrections + 1
+        )
         applySnapshot(counter.currentSnapshot())
     }
 
@@ -321,10 +333,13 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
                 frame = frame,
                 tracking = true,
                 fixationProgress = 0f,
-                activeSides = emptySet()
+                activeSides = emptySet(),
+                poseLosses = _state.value.poseLosses + if (poseWasVisible) 1 else 0
             )
+            poseWasVisible = false
             return
         }
+        poseWasVisible = true
         val update = counter.process(frame)
         lastEvent = update.events.lastOrNull()
         _state.value = _state.value.copy(frame = frame)
@@ -379,6 +394,8 @@ class CameraRepViewModel(application: Application) : AndroidViewModel(applicatio
         left = 0,
         right = 0,
         shortFixations = 0,
+        poseLosses = 0,
+        manualCorrections = 0,
         fixationProgress = 0f,
         elapsedMs = 0L,
         activeSides = emptySet(),

@@ -51,6 +51,11 @@ class SettingsRepository(context: Context) {
         get() = runCatching { prefs.getBoolean(KEY_DEMO_SEEDED, false) }.getOrDefault(false)
         set(value) = prefs.edit().putBoolean(KEY_DEMO_SEEDED, value).apply()
 
+    /** Первый запуск: подсказки показаны и больше не появляются. */
+    var onboardingShown: Boolean
+        get() = runCatching { prefs.getBoolean(KEY_ONBOARDING_SHOWN, false) }.getOrDefault(false)
+        set(value) = prefs.edit().putBoolean(KEY_ONBOARDING_SHOWN, value).apply()
+
     /** Папка SAF для видео подходов; не попадает в резервные копии. */
     var videoFolderUri: String?
         get() = runCatching { prefs.getString(KEY_VIDEO_FOLDER_URI, null) }.getOrNull()
@@ -266,6 +271,7 @@ class SettingsRepository(context: Context) {
         const val KEY_ATHLETE_AGE_GROUP = "athlete_age_group"
         const val KEY_ATHLETE_WEIGHT = "athlete_weight"
         const val KEY_DEMO_SEEDED = "demo_seeded"
+        const val KEY_ONBOARDING_SHOWN = "onboarding_shown"
         const val KEY_VIDEO_FOLDER_URI = "video_folder_uri"
         const val MIN_WEIGHT_KG = 20.0
         const val MAX_WEIGHT_KG = 300.0

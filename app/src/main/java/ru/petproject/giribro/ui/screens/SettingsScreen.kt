@@ -3,6 +3,7 @@ package ru.petproject.giribro.ui.screens
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -68,6 +69,7 @@ import ru.petproject.giribro.data.asBodyNumber
 import ru.petproject.giribro.logging.AppLog
 import ru.petproject.giribro.logging.AuthorContacts
 import ru.petproject.giribro.logging.LogSharing
+import ru.petproject.giribro.timer.CountdownSignal
 import ru.petproject.giribro.ui.components.SectionTitle
 import ru.petproject.giribro.util.pluralRu
 import ru.petproject.giribro.util.ruDayMonth
@@ -107,9 +109,11 @@ fun SettingsScreen(
         quickDurations = values.durationsSec.joinToString(", ")
     }
 
-    fun openExternal(intent: Intent, errorMessage: String) {
+    fun openExternal(intent: Intent, errorMessage: String, successMessage: String? = null) {
         runCatching {
             context.startActivity(Intent.createChooser(intent, "Открыть с помощью"))
+        }.onSuccess {
+            if (successMessage != null) vm.showInfo(successMessage)
         }.onFailure { error ->
             AppLog.e("Settings", errorMessage, error)
             vm.showError(errorMessage)
@@ -120,6 +124,18 @@ fun SettingsScreen(
         ActivityResultContracts.CreateDocument(DiaryBackupJson.MIME_TYPE)
     ) { uri ->
         uri?.let(vm::exportBackup)
+    }
+    val logsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            runCatching { LogSharing.saveLogs(context, uri) }
+                .onSuccess { vm.showInfo("Архив логов сохранён") }
+                .onFailure { error ->
+                    AppLog.e("Settings", "Не удалось сохранить логи", error)
+                    vm.showError("Не удалось сохранить логи")
+                }
+        }
     }
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -350,6 +366,19 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = {
+                        if (CountdownSignal.play(context)) {
+                            vm.showInfo("Сигнал воспроизведён")
+                        } else {
+                            vm.showInfo("Устройство в беззвучном режиме — звук не включён")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Проверить звук сигнала")
+                }
                 Spacer(Modifier.height(10.dp))
                 if (onOpenCameraCount != null) {
                     OutlinedButton(onClick = onOpenCameraCount) {
@@ -638,7 +667,11 @@ fun SettingsScreen(
                     onClick = {
                         runCatching { LogSharing.sendLogsIntent(context) }
                             .onSuccess { intent ->
-                                openExternal(intent, "Не удалось открыть почтовый клиент")
+                                openExternal(
+                                    intent,
+                                    "Не удалось открыть почтовый клиент",
+                                    "Письмо подготовлено — отправьте его в почтовом клиенте"
+                                )
                             }
                             .onFailure { error ->
                                 AppLog.e("Settings", "Не удалось подготовить логи", error)
@@ -649,12 +682,20 @@ fun SettingsScreen(
                 ) {
                     Text("Отправить логи")
                 }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { logsLauncher.launch(LogSharing.suggestedFileName()) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Сохранить логи в файл")
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "Логи содержат только технические сведения: версию приложения, " +
-                        "модель устройства и сообщения об ошибках. Данные дневника " +
-                        "и заметки в них не попадают. Письмо открывается в вашем " +
-                        "почтовом клиенте — приложение не отправляет его самостоятельно.",
+                        "модель устройства и сообщения об ошибках. Личные пути и адреса " +
+                        "файлов перед отправкой вырезаются, данные дневника и заметки не " +
+                        "попадают в архив. Письмо открывается в вашем почтовом клиенте — " +
+                        "приложение не отправляет его самостоятельно.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

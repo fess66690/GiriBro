@@ -71,6 +71,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _backupPasswordError = MutableStateFlow<String?>(null)
     val backupPasswordError: StateFlow<String?> = _backupPasswordError.asStateFlow()
 
+    private val _onboardingShown = MutableStateFlow(app.settings.onboardingShown)
+    val onboardingShown: StateFlow<Boolean> = _onboardingShown.asStateFlow()
+
     private var pendingEncryptedBackup: String? = null
 
     val workouts: StateFlow<List<Workout>> = app.workouts.observeAll()
@@ -529,6 +532,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Показывает ошибку, возникшую прямо в UI (например, нет почтового клиента). */
     fun showError(text: String) {
         showMessage(text, isError = true)
+    }
+
+    /** Информационный снекбар для действий, завершившихся успешно. */
+    fun showInfo(text: String) {
+        showMessage(text)
+    }
+
+    /** Отмечает, что подсказки первого запуска больше показывать не нужно. */
+    fun finishOnboarding() {
+        runCatching { app.settings.onboardingShown = true }
+            .onSuccess { _onboardingShown.value = true }
+            .onFailure { error -> AppLog.w(TAG, "Не удалось сохранить флаг онбординга", error) }
     }
 
     private fun showMessage(text: String, isError: Boolean = false) {
